@@ -11,22 +11,48 @@ import (
 	"gopkg.in/alecthomas/kingpin.v1"
 	"io/ioutil"
 	"log"
-	"os"
+	"strings"
 )
 
-func isLineBreak(b byte) bool {
-	return (b == '\r') || (b == '\n')
+type charGroup []byte
+type keywordGroup []string
+
+// declarators lists directives that are preceded by an identifier name.
+var declarators = keywordGroup{
+	"DB", "DW", "DD", "DQ", "DT", "DP", "DF", // data
+	"=", "EQU", "LABEL", // labels
+	"MACRO",        // macros
+	"PROC", "ENDP", // procedures
+	"STRUC", "ENDS", // structures
+	"SEGMENT", "ENDS", // segments
+	"GROUP", // groups
 }
 
-// isWordDelim returns true if b is any whitespace character.
-func isWhitespace(b byte) bool {
-	return (b == ' ') || (b == '\t')
+var linebreak = charGroup{'\r', '\n'}
+var whitespace = charGroup{' ', '\t'}
+var paramDelim = append(charGroup{',', ';'}, linebreak...)
+var wordDelim = append(append(charGroup{':'}, whitespace...), paramDelim...)
+
+func (g *charGroup) matches(b byte) bool {
+	for _, v := range *g {
+		if v == b {
+			return true
+		}
+	}
+	return false
 }
 
-// isWordDelim returns true if b is any valid assembly word delimiter.
-func isWordDelim(b byte) bool {
-	return isWhitespace(b) || isLineBreak(b) ||
-		(b == ';') || (b == ':') || (b == ',') || (b == '\'') || (b == '"')
+func (g *keywordGroup) matches(word []byte) bool {
+	if len(word) == 0 {
+		return false
+	}
+	wordString := string(word)
+	for _, v := range *g {
+		if strings.EqualFold(wordString, v) {
+			return true
+		}
+	}
+	return false
 }
 
 // item represents a token or text string returned from the scanner.
@@ -39,102 +65,75 @@ type item struct {
 type itemType int
 
 const (
-	itemError itemType = iota // error occurred; value is text of error
-	itemLabel                 // jump target
-	itemRest                  // not yet lexed
+	itemError       itemType = iota // error occurred; value is text of error
+	itemLabel                       // jump target
+	itemSymbol                      // Symbol declaration
+	itemInstruction                 // name of an instruction or directive
+	itemParam                       // generic parameter
 )
 
 type lexer struct {
-	input       []byte
-	stringDelim byte      // current string delimiter
-	start       int       // start position of this item
-	pos         int       // current position in the input
-	items       chan item // channel of scanned items
+	input     []byte
+	firstWord []byte    // first word on a line
+	start     int       // start position of this item
+	pos       int       // current position in the input
+	items     chan item // channel of scanned items
 }
 
 type stateFn func(*lexer) stateFn
-
-// lexString scans a string constant until it encounters the delimiter that
-/// has been scanned before entering it (' or ").
-func lexString(l *lexer) stateFn {
-	for b := l.next(); ; b = l.next() {
-		if isLineBreak(b) {
-			return l.errorf("Missing end quote")
-		} else if b == l.stringDelim {
-			l.emit(itemRest)
-			return lexInstruction
-		}
-	}
-	return lexBase
-}
 
 // lexComment advances the input until the next line break.
 // The ; has been scanned.
 func lexComment(l *lexer) stateFn {
 	for l.pos < len(l.input) {
-		if b := l.next(); isLineBreak(b) {
+		if b := l.next(); linebreak.matches(b) {
 			l.start = l.pos - 1
-			return lexRest
+			return lexBase
 		}
 	}
 	return nil
 }
 
-// lexLabel emits a label whose name ends at the current position.
-// The : has been scanned.
-func lexLabel(l *lexer) stateFn {
-	l.pos--
-	l.emit(itemLabel)
-	l.pos++
-	return lexBase
-}
-
-// lexRest emits the remaining unlexed code at a line break.
-func lexRest(l *lexer) stateFn {
-	l.emit(itemRest)
-	return lexBase
-}
-
-// lexInstruction scans instructions and directives.
+// lexInstruction scans instructions, directives and their parameters.
 func lexInstruction(l *lexer) stateFn {
-	for l.pos < len(l.input) {
-		l.nextWord()
-		switch b := l.next(); b {
-		case '"', '\'':
-			l.stringDelim = b
-			return lexString
-		default:
-			return lexBreak(l, b)
+	if l.firstWord != nil {
+		if declarators.matches(l.peekUntil(&wordDelim)) {
+			l.emitWord(itemSymbol, l.firstWord)
+			l.emitWord(itemInstruction, l.nextUntil(&wordDelim))
+		} else {
+			l.emitWord(itemInstruction, l.firstWord)
 		}
+		l.firstWord = nil
 	}
-	return nil
+	l.emitWord(itemParam, l.nextParam())
+	return lexBreak(l, l.next())
 }
 
 // lexBase branches both into labels and instructions.
 func lexBase(l *lexer) stateFn {
-	for l.pos < len(l.input) {
-		l.nextWord()
-		switch b := l.next(); b {
-		case ':':
-			return lexLabel
-		default:
-			return lexBreak(l, b)
+	l.firstWord = l.nextUntil(&wordDelim)
+	switch b := l.next(); b {
+	case ':':
+		l.emitWord(itemLabel, l.firstWord)
+	case '\r', '\n':
+		// Parameterless instructions
+		if len(l.firstWord) > 0 {
+			l.emitWord(itemInstruction, l.firstWord)
 		}
+	default:
+		return lexBreak(l, b)
 	}
-	return nil
+	return lexBase
 }
 
 // lexBreak checks for cases that always end a line of code.
 func lexBreak(l *lexer, b byte) stateFn {
-	switch b {
-	case ';':
+	if b == ';' {
 		return lexComment
-	case '\r', '\n':
-		return lexRest
-	default:
-		l.emit(itemRest)
-		return lexInstruction
+	} else if linebreak.matches(b) {
+		return lexBase
 	}
+	return lexInstruction
 }
 
 // next consumes the next byte in the input.
@@ -143,34 +142,48 @@ func (l *lexer) next() byte {
 	return l.input[l.pos-1]
 }
 
-// nextWord consumes the next whitespace-delimited word from the input.
-func (l *lexer) nextWord() []byte {
-	for isWhitespace(l.input[l.pos]) && l.pos < len(l.input)-1 {
+func (l *lexer) skip(delim *charGroup) {
+	for delim.matches(l.input[l.pos]) && l.pos < len(l.input) {
 		l.pos++
 	}
 	l.start = l.pos
-	for !isWordDelim(l.input[l.pos]) && l.pos < len(l.input) {
+}
+
+// nextUntil consumes the next word that is delimited by the given character group.
+func (l *lexer) nextUntil(delim *charGroup) []byte {
+	l.skip(&whitespace)
+	for !delim.matches(l.input[l.pos]) && l.pos < len(l.input) {
 		l.pos++
 	}
 	return l.input[l.start:l.pos]
 }
 
-// emit passes the current item back to the client.
-func (l *lexer) emit(t itemType) {
-	l.items <- item{t, l.input[l.start:l.pos]}
-	l.start = l.pos
+func (l *lexer) nextParam() []byte {
+	param := l.nextUntil(&paramDelim)
+	i := len(param)
+	for i > 0 && whitespace.matches(param[i-1]) {
+		i--
+	}
+	return param[:i]
 }
 
-// errorf returns an error token and terminates the scan by passing
-// back a nil pointer that will be the next state, terminating the lexer.
-func (l *lexer) errorf(format string, args ...interface{}) stateFn {
-	l.items <- item{itemError, []byte(fmt.Sprintf(format, args...))}
-	return nil
+func (l *lexer) peekUntil(delim *charGroup) []byte {
+	start, pos := l.start, l.pos
+	ret := l.nextUntil(delim)
+	l.start, l.pos = start, pos
+	return ret
+}
+
+// emitWord emits the given word as the given item type.
+func (l *lexer) emitWord(t itemType, word []byte) {
+	if len(word) > 0 {
+		l.items <- item{t, word}
+	}
 }
 
 // run runs the state machine for the lexer.
 func (l *lexer) run() {
-	for state := lexBase; state != nil; {
+	for state := lexBase; state != nil && l.pos < len(l.input); {
 		state = state(l)
 	}
 	close(l.items)
@@ -195,14 +208,27 @@ func main() {
 		log.Fatalln(err)
 	}
 	l := lex(bytes)
+
+	lastType := itemError
 	for i := range l.items {
 		switch i.typ {
 		case itemLabel:
-			fmt.Printf("\n%s:", i.val)
-		case itemError:
-			fmt.Printf("\n**Error** %s\n", i.val)
-		default:
-			os.Stdout.Write(i.val)
+			fmt.Printf("\n%s:\n", i.val)
+		case itemSymbol:
+			fmt.Printf("\n%s", i.val)
+		case itemInstruction:
+			if lastType == itemParam || lastType == itemInstruction {
+				fmt.Println("")
+			}
+			fmt.Printf("\t%s", i.val)
+		case itemParam:
+			if lastType == itemParam {
+				fmt.Printf(", ")
+			} else if lastType == itemInstruction {
+				fmt.Printf("\t")
+			}
+			fmt.Printf("%s", i.val)
 		}
+		lastType = i.typ
 	}
 }
