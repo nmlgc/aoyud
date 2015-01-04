@@ -20,10 +20,11 @@ type keywordGroup []string
 // declarators lists directives that are preceded by an identifier name.
 var declarators = keywordGroup{
 	"DB", "DW", "DD", "DQ", "DT", "DP", "DF", // data
-	"=", "EQU", "LABEL", // labels
-	"MACRO",        // macros
+	"=", "EQU", "TEXTEQU", "LABEL", // labels
+	"MACRO", "TYPEDEF", // macros
+	"CATSTR", "SUBSTR", "INSTR", "SIZESTR", // string macros
 	"PROC", "ENDP", // procedures
-	"STRUC", "ENDS", // structures
+	"STRUC", "STRUCT", "ENDS", // structures
 	"SEGMENT", "ENDS", // segments
 	"GROUP", // groups
 }
@@ -32,6 +33,23 @@ var linebreak = charGroup{'\r', '\n'}
 var whitespace = charGroup{' ', '\t'}
 var paramDelim = append(charGroup{',', ';'}, linebreak...)
 var wordDelim = append(append(charGroup{':'}, whitespace...), paramDelim...)
+
+// nestLevelEnter and nestLevelLeave map the various punctuation marks used in
+// TASM's syntax to bit flags ordered by their respective nesting priorities.
+var nestLevelEnter = map[byte]int{
+	'{':  1,
+	'(':  2,
+	'<':  4,
+	'"':  8,
+	'\'': 8,
+}
+var nestLevelLeave = map[byte]int{
+	'}':  1,
+	')':  2,
+	'>':  4,
+	'"':  8,
+	'\'': 8,
+}
 
 func (g *charGroup) matches(b byte) bool {
 	for _, v := range *g {
@@ -85,13 +103,9 @@ type stateFn func(*lexer) stateFn
 // lexComment advances the input until the next line break.
 // The ; has been scanned.
 func lexComment(l *lexer) stateFn {
-	for l.pos < len(l.input) {
-		if b := l.next(); linebreak.matches(b) {
-			l.start = l.pos - 1
-			return lexBase
-		}
-	}
-	return nil
+	l.nextUntil(&linebreak)
+	l.pos++
+	return lexBase
 }
 
 // lexInstruction scans instructions, directives and their parameters.
@@ -106,7 +120,10 @@ func lexInstruction(l *lexer) stateFn {
 		l.firstWord = nil
 	}
 	l.emitWord(itemParam, l.nextParam())
-	return lexBreak(l, l.next())
+	if l.pos < len(l.input) {
+		return lexBreak(l, l.next())
+	}
+	return nil
 }
 
 // lexBase branches both into labels and instructions.
@@ -128,7 +145,7 @@ func lexBase(l *lexer) stateFn {
 
 // lexBreak checks for cases that always end a line of code.
 func lexBreak(l *lexer, b byte) stateFn {
-	if b == ';' {
+	if b == ';' || b == '\\' {
 		return lexComment
 	} else if linebreak.matches(b) {
 		return lexBase
@@ -142,35 +159,70 @@ func (l *lexer) next() byte {
 	return l.input[l.pos-1]
 }
 
-func (l *lexer) skip(delim *charGroup) {
+// ignore consumes bytes from the input until they stop matching the given
+// character group.
+func (l *lexer) ignore(delim *charGroup) {
 	for delim.matches(l.input[l.pos]) && l.pos < len(l.input) {
 		l.pos++
 	}
-	l.start = l.pos
 }
 
 // nextUntil consumes the next word that is delimited by the given character group.
 func (l *lexer) nextUntil(delim *charGroup) []byte {
-	l.skip(&whitespace)
+	l.ignore(&whitespace)
+	l.start = l.pos
 	for !delim.matches(l.input[l.pos]) && l.pos < len(l.input) {
 		l.pos++
 	}
 	return l.input[l.start:l.pos]
 }
 
+// nextParam consumes and returns the next parameter to an instruction, taking
+// nesting into account.
 func (l *lexer) nextParam() []byte {
-	param := l.nextUntil(&paramDelim)
-	i := len(param)
-	for i > 0 && whitespace.matches(param[i-1]) {
-		i--
+	var quote byte
+	level := 0
+
+	l.ignore(&whitespace)
+	l.start = l.pos
+	for !(level == 0 && paramDelim.matches(l.input[l.pos])) && l.pos < len(l.input) {
+		b := l.next()
+
+		if level == 0 && b == '\\' {
+			// TODO: Find a nicer way to work around \r\n.
+			l.ignore(&whitespace)
+			if l.next() == '\r' && l.input[l.pos] == '\n' {
+				l.next()
+			}
+			continue
+		}
+		var leavecond bool
+		ll := nestLevelLeave[b]
+		if quote != 0 {
+			leavecond = (b == quote)
+		} else {
+			leavecond = (level & ll) != 0
+		}
+		if leavecond {
+			level &= ^ll
+			quote = 0
+		} else if le := nestLevelEnter[b]; le > level {
+			level |= le
+			if b == '\'' || b == '"' {
+				quote = b
+			}
+		}
 	}
-	return param[:i]
+	for l.pos > l.start && whitespace.matches(l.input[l.pos-1]) {
+		l.pos--
+	}
+	return l.input[l.start:l.pos]
 }
 
 func (l *lexer) peekUntil(delim *charGroup) []byte {
-	start, pos := l.start, l.pos
+	pos := l.pos
 	ret := l.nextUntil(delim)
-	l.start, l.pos = start, pos
+	l.pos = pos
 	return ret
 }
 
