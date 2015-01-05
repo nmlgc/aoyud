@@ -114,6 +114,12 @@ func lexFirst(l *lexer) stateFn {
 	if declarators.matches(l.peekUntil(&wordDelim)) {
 		l.emitWord(itemSymbol, first)
 		l.emitWord(itemInstruction, l.nextUntil(&wordDelim))
+	} else if strings.EqualFold(string(first), "comment") {
+		l.ignore(&whitespace)
+		delim := charGroup{l.next()}
+		l.nextUntil(&delim)
+		l.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
+		return lexFirst
 	} else {
 		l.emitWord(itemInstruction, first)
 	}
