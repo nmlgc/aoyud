@@ -29,6 +29,8 @@ var declarators = keywordGroup{
 	"GROUP", // groups
 }
 
+const eof = 0
+
 var linebreak = charGroup{'\r', '\n'}
 var whitespace = charGroup{' ', '\t'}
 var paramDelim = append(charGroup{',', ';'}, linebreak...)
@@ -85,96 +87,95 @@ type itemType int
 const (
 	itemError       itemType = iota // error occurred; value is text of error
 	itemLabel                       // jump target
-	itemSymbol                      // Symbol declaration
+	itemSymbol                      // symbol declaration
 	itemInstruction                 // name of an instruction or directive
 	itemParam                       // generic parameter
 )
 
 type lexer struct {
-	input     []byte
-	firstWord []byte    // first word on a line
-	start     int       // start position of this item
-	pos       int       // current position in the input
-	items     chan item // channel of scanned items
+	input []byte
+	pos   int       // current position in the input
+	items chan item // channel of scanned items
 }
 
 type stateFn func(*lexer) stateFn
 
-// lexComment advances the input until the next line break.
-// The ; has been scanned.
-func lexComment(l *lexer) stateFn {
-	l.nextUntil(&linebreak)
-	l.pos++
-	return lexBase
+// lexFirst scans labels, the symbol declaration, and the name of the
+// instruction.
+func lexFirst(l *lexer) stateFn {
+	first := l.nextUntil(&wordDelim)
+	// Label?
+	if l.peek() == ':' {
+		l.next()
+		l.emitWord(itemLabel, first)
+		return lexFirst
+	}
+	// Instruction
+	if declarators.matches(l.peekUntil(&wordDelim)) {
+		l.emitWord(itemSymbol, first)
+		l.emitWord(itemInstruction, l.nextUntil(&wordDelim))
+	} else {
+		l.emitWord(itemInstruction, first)
+	}
+	return lexParam
 }
 
-// lexInstruction scans instructions, directives and their parameters.
-func lexInstruction(l *lexer) stateFn {
-	if l.firstWord != nil {
-		if declarators.matches(l.peekUntil(&wordDelim)) {
-			l.emitWord(itemSymbol, l.firstWord)
-			l.emitWord(itemInstruction, l.nextUntil(&wordDelim))
-		} else {
-			l.emitWord(itemInstruction, l.firstWord)
-		}
-		l.firstWord = nil
-	}
+// lexParam scans parameters and comments.
+func lexParam(l *lexer) stateFn {
 	l.emitWord(itemParam, l.nextParam())
-	if l.pos < len(l.input) {
-		return lexBreak(l, l.next())
-	}
-	return nil
-}
-
-// lexBase branches both into labels and instructions.
-func lexBase(l *lexer) stateFn {
-	l.firstWord = l.nextUntil(&wordDelim)
-	switch b := l.next(); b {
-	case ':':
-		l.emitWord(itemLabel, l.firstWord)
+	switch l.next() {
+	case ';', '\\':
+		// Comment
+		l.nextUntil(&linebreak)
+		return lexFirst
 	case '\r', '\n':
-		// Parameterless instructions
-		if len(l.firstWord) > 0 {
-			l.emitWord(itemInstruction, l.firstWord)
-		}
-	default:
-		return lexBreak(l, b)
+		return lexFirst
+	case eof:
+		return nil
 	}
-	return lexBase
-}
-
-// lexBreak checks for cases that always end a line of code.
-func lexBreak(l *lexer, b byte) stateFn {
-	if b == ';' || b == '\\' {
-		return lexComment
-	} else if linebreak.matches(b) {
-		return lexBase
-	}
-	return lexInstruction
-}
-
-// next consumes the next byte in the input.
-func (l *lexer) next() byte {
-	l.pos++
-	return l.input[l.pos-1]
+	return lexParam
 }
 
 // ignore consumes bytes from the input until they stop matching the given
 // character group.
 func (l *lexer) ignore(delim *charGroup) {
-	for delim.matches(l.input[l.pos]) && l.pos < len(l.input) {
-		l.pos++
+	for delim.matches(l.peek()) {
+		l.next()
 	}
+}
+
+// peek returns but does not consume the next byte in the input.
+func (l *lexer) peek() byte {
+	if l.pos >= len(l.input) {
+		return eof
+	}
+	return l.input[l.pos]
+}
+
+// next consumes the next byte in the input.
+func (l *lexer) next() byte {
+	ret := l.peek()
+	l.pos++
+	return ret
+}
+
+// peekUntil returns but does not consume the next word that is delimited by
+// the given character group.
+func (l *lexer) peekUntil(delim *charGroup) []byte {
+	pos := l.pos
+	ret := l.nextUntil(delim)
+	l.pos = pos
+	return ret
 }
 
 // nextUntil consumes the next word that is delimited by the given character group.
 func (l *lexer) nextUntil(delim *charGroup) []byte {
 	l.ignore(&whitespace)
-	l.start = l.pos
-	for !delim.matches(l.input[l.pos]) && l.pos < len(l.input) {
-		l.pos++
+	start := l.pos
+	for !delim.matches(l.peek()) && l.peek() != eof {
+		l.next()
 	}
-	return l.input[l.start:l.pos]
+	return l.input[start:l.pos]
 }
 
 // nextParam consumes and returns the next parameter to an instruction, taking
@@ -184,17 +185,13 @@ func (l *lexer) nextParam() []byte {
 	level := 0
 
 	l.ignore(&whitespace)
-	l.start = l.pos
-	for !(level == 0 && paramDelim.matches(l.input[l.pos])) && l.pos < len(l.input) {
+	start := l.pos
+	for !(level == 0 && paramDelim.matches(l.peek())) && l.peek() != eof {
 		b := l.next()
 
 		if level == 0 && b == '\\' {
-			// TODO: Find a nicer way to work around \r\n.
-			l.ignore(&whitespace)
-			if l.next() == '\r' && l.input[l.pos] == '\n' {
-				l.next()
-			}
-			continue
+			l.nextUntil(&linebreak)
+			l.ignore(&linebreak)
 		}
 		var leavecond bool
 		ll := nestLevelLeave[b]
@@ -213,17 +210,10 @@ func (l *lexer) nextParam() []byte {
 			}
 		}
 	}
-	for l.pos > l.start && whitespace.matches(l.input[l.pos-1]) {
+	for l.pos > start && whitespace.matches(l.input[l.pos-1]) {
 		l.pos--
 	}
-	return l.input[l.start:l.pos]
-}
-
-func (l *lexer) peekUntil(delim *charGroup) []byte {
-	pos := l.pos
-	ret := l.nextUntil(delim)
-	l.pos = pos
-	return ret
+	return l.input[start:l.pos]
 }
 
 // emitWord emits the given word as the given item type.
@@ -235,7 +225,7 @@ func (l *lexer) emitWord(t itemType, word []byte) {
 
 // run runs the state machine for the lexer.
 func (l *lexer) run() {
-	for state := lexBase; state != nil && l.pos < len(l.input); {
+	for state := lexFirst; state != nil; {
 		state = state(l)
 	}
 	close(l.items)
