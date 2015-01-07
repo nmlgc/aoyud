@@ -247,6 +247,35 @@ func lex(input []byte) *lexer {
 	return l
 }
 
+// formatAsm returns a function that outputs valid, formatted assembly code
+// for a sequence of lexed items.
+func formatAsm() func(*item) string {
+	lastType := itemError
+	return func(i *item) string {
+		var format string
+		switch i.typ {
+		case itemLabel:
+			format = "\n%s:\n"
+		case itemSymbol:
+			format = "\n%s"
+		case itemInstruction:
+			if lastType == itemParam || lastType == itemInstruction {
+				format = "\n"
+			}
+			format += "\t%s"
+		case itemParam:
+			if lastType == itemParam {
+				format = ", "
+			} else if lastType == itemInstruction {
+				format = "\t"
+			}
+			format += "%s"
+		}
+		lastType = i.typ
+		return fmt.Sprintf(format, i.val)
+	}
+}
+
 func main() {
 	filename := kingpin.Arg("filename", "Assembly file.").Required().ExistingFile()
 	kingpin.Parse()
@@ -256,27 +285,8 @@ func main() {
 		log.Fatalln(err)
 	}
 	l := lex(bytes)
-
-	lastType := itemError
+	formatter := formatAsm()
 	for i := range l.items {
-		switch i.typ {
-		case itemLabel:
-			fmt.Printf("\n%s:\n", i.val)
-		case itemSymbol:
-			fmt.Printf("\n%s", i.val)
-		case itemInstruction:
-			if lastType == itemParam || lastType == itemInstruction {
-				fmt.Println("")
-			}
-			fmt.Printf("\t%s", i.val)
-		case itemParam:
-			if lastType == itemParam {
-				fmt.Printf(", ")
-			} else if lastType == itemInstruction {
-				fmt.Printf("\t")
-			}
-			fmt.Printf("%s", i.val)
-		}
-		lastType = i.typ
+		fmt.Print(formatter(&i))
 	}
 }
