@@ -276,6 +276,53 @@ func formatAsm() func(*item) string {
 	}
 }
 
+type parser struct {
+	instructions []item
+	// General state
+	symLast string // last symbol declaration encountered
+	// Open procedures
+	procStart int
+	procNest  int
+	procName  string
+}
+
+func (p *parser) eval(i *item) {
+	itemNum := len(p.instructions)
+	valString := string(i.val)
+
+	p.instructions = append(p.instructions, *i)
+	switch i.typ {
+	case itemSymbol:
+		p.symLast = valString
+	case itemInstruction:
+		if strings.EqualFold(valString, "PROC") {
+			if p.procNest == 0 {
+				p.procName = p.symLast
+				p.procStart = itemNum
+			} else {
+				log.Printf("ignoring nested procedure %s\n", p.symLast)
+			}
+			p.procNest++
+		} else if strings.EqualFold(valString, "ENDP") {
+			if p.procNest == 0 {
+				log.Printf("ignoring procedure %s without a PROC directive\n", p.symLast)
+			} else if p.procNest == 1 {
+				log.Printf(
+					"found procedure %s ranging from lex items #%d-#%d\n",
+					p.procName, p.procStart, itemNum,
+				)
+			}
+			p.procNest--
+		}
+	}
+}
+
+func (p *parser) end() {
+	if p.procNest != 0 {
+		log.Printf("ignoring procedure %s without an ENDP directive\n", p.procName)
+	}
+}
+
 func main() {
 	filename := kingpin.Arg("filename", "Assembly file.").Required().ExistingFile()
 	kingpin.Parse()
@@ -284,9 +331,15 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+	log.SetFlags(0)
+	log.SetPrefix(*filename + ": ")
 	l := lex(bytes)
+	var p parser
 	formatter := formatAsm()
+
 	for i := range l.items {
+		p.eval(&i)
 		fmt.Print(formatter(&i))
 	}
+	p.end()
 }
