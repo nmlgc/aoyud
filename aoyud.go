@@ -17,6 +17,11 @@ import (
 type charGroup []byte
 type keywordGroup []string
 
+// instructions lists directives that can't be preceded by an identifier name.
+var instructions = keywordGroup{
+	"CALL", "INVOKE", "OPTION",
+}
+
 // declarators lists directives that are preceded by an identifier name.
 var declarators = keywordGroup{
 	"DB", "DW", "DD", "DQ", "DT", "DP", "DF", // data
@@ -110,8 +115,9 @@ func lexFirst(l *lexer) stateFn {
 		l.emitWord(itemLabel, first)
 		return lexFirst
 	}
+	second := l.peekUntil(&wordDelim)
 	// Instruction
-	if declarators.matches(l.peekUntil(&wordDelim)) {
+	if !instructions.matches(first) && declarators.matches(second) {
 		l.emitWord(itemSymbol, first)
 		l.emitWord(itemInstruction, l.nextUntil(&wordDelim))
 	} else if strings.EqualFold(string(first), "comment") {
