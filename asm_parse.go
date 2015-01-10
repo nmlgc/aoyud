@@ -18,7 +18,10 @@ type parser struct {
 }
 
 // parseFn represents a function handling a certain instruction or directive.
-type parseFn func(p *parser, itemNum int, i *item)
+type parseFn struct {
+	f         func(p *parser, itemNum int, i *item)
+	minParams int
+}
 
 func (p *parser) parsePROC(itemNum int, i *item) {
 	if p.procNest == 0 {
@@ -43,8 +46,8 @@ func (p *parser) parseENDP(itemNum int, i *item) {
 }
 
 var parseFns = map[string]parseFn{
-	"PROC": (*parser).parsePROC,
-	"ENDP": (*parser).parseENDP,
+	"PROC": {(*parser).parsePROC, 0},
+	"ENDP": {(*parser).parseENDP, 0},
 }
 
 func (p *parser) eval(i *item) {
@@ -57,8 +60,15 @@ func (p *parser) eval(i *item) {
 		p.symLast = valString
 	case itemInstruction:
 		valUpper := strings.ToUpper(valString)
-		if insFunc := parseFns[valUpper]; insFunc != nil {
-			insFunc(p, itemNum, i)
+		if insFunc, ok := parseFns[valUpper]; ok {
+			if paramCount := len(i.params); paramCount < insFunc.minParams {
+				log.Printf(
+					"%s requires at least %d parameters, %d given\n",
+					valUpper, insFunc.minParams, paramCount,
+				)
+			} else {
+				insFunc.f(p, itemNum, i)
+			}
 		}
 	}
 }
