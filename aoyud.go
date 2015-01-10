@@ -82,8 +82,9 @@ func (g *keywordGroup) matches(word []byte) bool {
 
 // item represents a token or text string returned from the scanner.
 type item struct {
-	typ itemType // The type of this item.
-	val []byte   // The value of this item.
+	typ    itemType // The type of this item
+	val    []byte   // The main value of this item
+	params [][]byte // Instruction parameters
 }
 
 // itemType identifies the type of lex items.
@@ -93,14 +94,14 @@ const (
 	itemError       itemType = iota // error occurred; value is text of error
 	itemLabel                       // jump target
 	itemSymbol                      // symbol declaration
-	itemInstruction                 // name of an instruction or directive
-	itemParam                       // generic parameter
+	itemInstruction                 // instruction or directive and its parameters
 )
 
 type lexer struct {
-	input []byte
-	pos   int       // current position in the input
-	items chan item // channel of scanned items
+	input   []byte
+	pos     int       // current position in the input
+	curInst item      // current instruction being built
+	items   chan item // channel of scanned items
 }
 
 type stateFn func(*lexer) stateFn
@@ -119,7 +120,7 @@ func lexFirst(l *lexer) stateFn {
 	// Instruction
 	if !instructions.matches(first) && declarators.matches(second) {
 		l.emitWord(itemSymbol, first)
-		l.emitWord(itemInstruction, l.nextUntil(&wordDelim))
+		l.newInstruction(l.nextUntil(&wordDelim))
 	} else if strings.EqualFold(string(first), "comment") {
 		l.ignore(&whitespace)
 		delim := charGroup{l.next()}
@@ -127,14 +128,16 @@ func lexFirst(l *lexer) stateFn {
 		l.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
 		return lexFirst
 	} else {
-		l.emitWord(itemInstruction, first)
+		l.newInstruction(first)
 	}
 	return lexParam
 }
 
 // lexParam scans parameters and comments.
 func lexParam(l *lexer) stateFn {
-	l.emitWord(itemParam, l.nextParam())
+	if param := l.nextParam(); len(param) > 0 {
+		l.curInst.params = append(l.curInst.params, param)
+	}
 	switch l.next() {
 	case ';', '\\':
 		// Comment
@@ -228,10 +231,22 @@ func (l *lexer) nextParam() []byte {
 	return l.input[start:l.pos]
 }
 
-// emitWord emits the given word as the given item type.
+// emitInstruction emits the currently cached instruction.
+func (l *lexer) newInstruction(val []byte) {
+	l.curInst.typ = itemInstruction
+	if len(l.curInst.val) != 0 {
+		l.items <- l.curInst
+	}
+	l.curInst.val = val
+	l.curInst.params = nil
+}
+
+// emitWord emits the currently cached instruction, followed by the given word
+// as the given item type.
 func (l *lexer) emitWord(t itemType, word []byte) {
+	l.newInstruction(nil)
 	if len(word) > 0 {
-		l.items <- item{t, word}
+		l.items <- item{t, word, nil}
 	}
 }
 
@@ -240,6 +255,7 @@ func (l *lexer) run() {
 	for state := lexFirst; state != nil; {
 		state = state(l)
 	}
+	l.newInstruction(nil) // send the currently cached instruction
 	close(l.items)
 }
 
@@ -253,33 +269,29 @@ func lex(input []byte) *lexer {
 	return l
 }
 
-// formatAsm returns a function that outputs valid, formatted assembly code
-// for a sequence of lexed items.
-func formatAsm() func(*item) string {
-	lastType := itemError
-	return func(i *item) string {
-		var format string
-		switch i.typ {
-		case itemLabel:
-			format = "\n%s:\n"
-		case itemSymbol:
-			format = "\n%s"
-		case itemInstruction:
-			if lastType == itemParam || lastType == itemInstruction {
-				format = "\n"
-			}
-			format += "\t%s"
-		case itemParam:
-			if lastType == itemParam {
-				format = ", "
-			} else if lastType == itemInstruction {
-				format = "\t"
-			}
-			format += "%s"
-		}
-		lastType = i.typ
-		return fmt.Sprintf(format, i.val)
+func (i item) String() string {
+	var format string
+	switch i.typ {
+	case itemLabel:
+		format = "%s:\n"
+	case itemSymbol:
+		format = "%s"
+	case itemInstruction:
+		format = "\t%s"
 	}
+	ret := fmt.Sprintf(format, i.val)
+	for num, param := range i.params {
+		if num == 0 {
+			ret += "\t"
+		} else {
+			ret += ", "
+		}
+		ret += fmt.Sprintf("%s", param)
+	}
+	if i.typ == itemInstruction {
+		ret += "\n"
+	}
+	return ret
 }
 
 type parser struct {
@@ -341,11 +353,10 @@ func main() {
 	log.SetPrefix(*filename + ": ")
 	l := lex(bytes)
 	var p parser
-	formatter := formatAsm()
 
 	for i := range l.items {
 		p.eval(&i)
-		fmt.Print(formatter(&i))
+		fmt.Print(i)
 	}
 	p.end()
 }
