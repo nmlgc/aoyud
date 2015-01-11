@@ -295,7 +295,14 @@ func (i item) String() string {
 }
 
 func main() {
-	filename := kingpin.Arg("filename", "Assembly file.").Required().ExistingFile()
+	filename := kingpin.Arg(
+		"filename", "Assembly file.",
+	).Required().ExistingFile()
+
+	syntax := kingpin.Flag(
+		"syntax", "Target assembler.",
+	).Default("TASM").Enum("TASM", "MASM")
+
 	kingpin.Parse()
 
 	bytes, err := ioutil.ReadFile(*filename)
@@ -305,7 +312,7 @@ func main() {
 	log.SetFlags(0)
 	log.SetPrefix(*filename + ": ")
 	l := lex(bytes)
-	var p parser
+	p := parser{syntax: *syntax}
 
 	for i := range l.items {
 		p.eval(&i)
