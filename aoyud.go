@@ -269,6 +269,19 @@ func lex(input []byte) *lexer {
 	return l
 }
 
+// checkMinParams checks if the item has at least min parameters and prints a
+// log message if it doesn't.
+func (i *item) checkMinParams(min int) bool {
+	if given := len(i.params); given < min {
+		log.Printf(
+			"%s requires at least %d parameters, %d given\n",
+			strings.ToUpper(string(i.val)), min, given,
+		)
+		return false
+	}
+	return true
+}
+
 func (i item) String() string {
 	var format string
 	switch i.typ {

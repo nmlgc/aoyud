@@ -147,16 +147,9 @@ func (p *parser) eval(i *item) {
 	case itemSymbol:
 		p.symLast = valString
 	case itemInstruction:
-		valUpper := strings.ToUpper(valString)
-		if insFunc, ok := parseFns[valUpper]; ok {
-			if paramCount := len(i.params); paramCount < insFunc.minParams {
-				log.Printf(
-					"%s requires at least %d parameters, %d given\n",
-					valUpper, insFunc.minParams, paramCount,
-				)
-			} else {
-				insFunc.f(p, itemNum, i)
-			}
+		insFunc, ok := parseFns[strings.ToUpper(valString)]
+		if ok && i.checkMinParams(insFunc.minParams) {
+			insFunc.f(p, itemNum, i)
 		}
 	}
 }
