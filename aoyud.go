@@ -42,6 +42,7 @@ var linebreak = charGroup{'\r', '\n'}
 var whitespace = charGroup{' ', '\t'}
 var paramDelim = append(charGroup{',', ';'}, linebreak...)
 var wordDelim = append(append(charGroup{':'}, whitespace...), paramDelim...)
+var insDelim = append(charGroup{'='}, wordDelim...)
 
 // nestLevelEnter and nestLevelLeave map the various punctuation marks used in
 // TASM's syntax to bit flags ordered by their respective nesting priorities.
@@ -127,16 +128,19 @@ func (l *lexer) lexINCLUDE(i *item) {
 // lexFirst scans labels, the symbol declaration, and the name of the
 // instruction.
 func lexFirst(l *lexer) stateFn {
-	first := l.nextUntil(&wordDelim)
+	first := l.nextUntil(&insDelim)
 	// Label?
 	if l.peek() == ':' {
 		l.next()
 		l.emitWord(itemLabel, first)
 		return lexFirst
 	}
-	second := l.peekUntil(&wordDelim)
-	// Instruction
-	if !instructions.matches(first) && declarators.matches(second) {
+	// Assignment? (Needs to be a special case because = doesn't need to be
+	// surrounded by spaces, and nextUntil() isn't designed to handle that.)
+	if l.peek() == '=' {
+		l.emitWord(itemSymbol, first)
+		l.newInstruction([]byte{l.next()})
+	} else if second := l.peekUntil(&wordDelim); !instructions.matches(first) && declarators.matches(second) {
 		l.emitWord(itemSymbol, first)
 		l.newInstruction(l.nextUntil(&wordDelim))
 	} else if strings.EqualFold(string(first), "comment") {
