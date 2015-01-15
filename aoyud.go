@@ -11,6 +11,8 @@ import (
 	"gopkg.in/alecthomas/kingpin.v1"
 	"io/ioutil"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -99,12 +101,28 @@ const (
 
 type lexer struct {
 	input   []byte
+	paths   []string  // search paths for relative includes
 	pos     int       // current position in the input
 	curInst item      // current instruction being built
 	items   chan item // channel of scanned items
 }
 
 type stateFn func(*lexer) stateFn
+
+// lexFn represents a function handling a certain instruction or directive
+// at lexing time.
+type lexFn struct {
+	f         func(l *lexer, i *item)
+	minParams int
+}
+
+func (l *lexer) lexINCLUDE(i *item) {
+	filename := string(i.params[0])
+	newL := lexFile(filename, l.paths)
+	for i := range newL.items {
+		l.items <- i
+	}
+}
 
 // lexFirst scans labels, the symbol declaration, and the name of the
 // instruction.
@@ -233,8 +251,16 @@ func (l *lexer) nextParam() []byte {
 
 // emitInstruction emits the currently cached instruction.
 func (l *lexer) newInstruction(val []byte) {
+	// Nope, turning this global would result in an initialization loop.
+	var lexFns = map[string]lexFn{
+		"INCLUDE": {(*lexer).lexINCLUDE, 1},
+	}
+
 	l.curInst.typ = itemInstruction
-	if len(l.curInst.val) != 0 {
+	lexFunc, ok := lexFns[strings.ToUpper(string(l.curInst.val))]
+	if ok && l.curInst.checkMinParams(lexFunc.minParams) {
+		lexFunc.f(l, &l.curInst)
+	} else if len(l.curInst.val) != 0 {
 		l.items <- l.curInst
 	}
 	l.curInst.val = string(val)
@@ -259,11 +285,34 @@ func (l *lexer) run() {
 	close(l.items)
 }
 
-// lex creates a new scanner for the input string.
-func lex(input []byte) *lexer {
+// readFirstFromPaths reads and returns the contents of a file with name
+// filename from the first directory in the given list that contains such a
+// file, as well as the full path to the file that was read.
+func readFirstFromPaths(filename string, paths []string) ([]byte, string) {
+	for _, path := range paths {
+		fullname := filepath.Join(path, filename)
+		bytes, err := ioutil.ReadFile(fullname)
+		if err == nil {
+			return bytes, fullname
+		} else if !os.IsNotExist(err) {
+			log.Fatalln(err)
+		}
+	}
+	log.Fatalf(
+		"could not find %s in any of the source paths:\n\t%s",
+		filename, strings.Join(paths, "\n\t"),
+	)
+	return nil, ""
+}
+
+func lexFile(filename string, paths []string) *lexer {
+	bytes, fullname := readFirstFromPaths(filename, paths)
+	log.SetFlags(0)
+	log.SetPrefix(filename + ": ")
 	l := &lexer{
-		input: input,
+		input: bytes,
 		items: make(chan item),
+		paths: append(paths, filepath.Dir(fullname)),
 	}
 	go l.run()
 	return l
@@ -316,15 +365,13 @@ func main() {
 		"syntax", "Target assembler.",
 	).Default("TASM").Enum("TASM", "MASM")
 
+	includes := kingpin.Flag(
+		"include", "Add the given directory to the list of assembly include directories.",
+	).Default(".").Short('I').Strings()
+
 	kingpin.Parse()
 
-	bytes, err := ioutil.ReadFile(*filename)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	log.SetFlags(0)
-	log.SetPrefix(*filename + ": ")
-	l := lex(bytes)
+	l := lexFile(*filename, *includes)
 	p := parser{syntax: *syntax}
 
 	for i := range l.items {

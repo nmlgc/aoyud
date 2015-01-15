@@ -21,7 +21,8 @@ type parser struct {
 	procName  string
 }
 
-// parseFn represents a function handling a certain instruction or directive.
+// parseFn represents a function handling a certain instruction or directive
+// at parsing time.
 type parseFn struct {
 	f         func(p *parser, itemNum int, i *item)
 	minParams int
