@@ -140,14 +140,13 @@ func (p *parser) eval(i *item) {
 		p.syms = make(symMap)
 	}
 	itemNum := len(p.instructions)
-	valString := string(i.val)
 
 	p.instructions = append(p.instructions, *i)
 	switch i.typ {
 	case itemSymbol:
-		p.symLast = valString
+		p.symLast = i.val
 	case itemInstruction:
-		insFunc, ok := parseFns[strings.ToUpper(valString)]
+		insFunc, ok := parseFns[strings.ToUpper(i.val)]
 		if ok && i.checkMinParams(insFunc.minParams) {
 			insFunc.f(p, itemNum, i)
 		}

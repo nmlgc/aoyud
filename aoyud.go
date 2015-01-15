@@ -83,7 +83,7 @@ func (g *keywordGroup) matches(word []byte) bool {
 // item represents a token or text string returned from the scanner.
 type item struct {
 	typ    itemType // The type of this item
-	val    []byte   // The main value of this item
+	val    string   // Name of the instruction, label, or symbol. Limited to ASCII characters.
 	params [][]byte // Instruction parameters
 }
 
@@ -237,7 +237,7 @@ func (l *lexer) newInstruction(val []byte) {
 	if len(l.curInst.val) != 0 {
 		l.items <- l.curInst
 	}
-	l.curInst.val = val
+	l.curInst.val = string(val)
 	l.curInst.params = nil
 }
 
@@ -246,7 +246,7 @@ func (l *lexer) newInstruction(val []byte) {
 func (l *lexer) emitWord(t itemType, word []byte) {
 	l.newInstruction(nil)
 	if len(word) > 0 {
-		l.items <- item{t, word, nil}
+		l.items <- item{t, string(word), nil}
 	}
 }
 
@@ -275,7 +275,7 @@ func (i *item) checkMinParams(min int) bool {
 	if given := len(i.params); given < min {
 		log.Printf(
 			"%s requires at least %d parameters, %d given\n",
-			strings.ToUpper(string(i.val)), min, given,
+			strings.ToUpper(i.val), min, given,
 		)
 		return false
 	}
