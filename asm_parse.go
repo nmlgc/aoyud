@@ -3,11 +3,38 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"strings"
 )
 
-type symMap map[string]int
+type asmVal fmt.Stringer
+
+type asmInt int
+type asmBytes []byte
+
+func (v asmInt) String() string {
+	return fmt.Sprintf("%d", int(v))
+}
+
+func (v asmBytes) String() string {
+	return fmt.Sprintf("\"%s\"", []byte(v))
+}
+
+type symbol struct {
+	constant bool
+	val      asmVal
+}
+
+func (s symbol) String() string {
+	var ret string
+	if s.constant {
+		ret = "(const) "
+	}
+	return ret + s.val.String() + "\n"
+}
+
+type symMap map[string]symbol
 
 type parser struct {
 	instructions []item
@@ -52,7 +79,7 @@ func (p *parser) parseENDP(itemNum int, i *item) {
 
 func (p *parser) parseMODEL(itemNum int, i *item) {
 	// modelSym defines the @Model value for each memory model.
-	var modelSym = map[string]int{
+	var modelSym = map[string]asmInt{
 		"TINY":  1,
 		"SMALL": 2,
 		// Yes, the TASM manual is actually wrong here.
@@ -67,7 +94,7 @@ func (p *parser) parseMODEL(itemNum int, i *item) {
 	}
 
 	// modelCodeSize defines the @CodeSize value for each memory model.
-	var modelCodeSize = map[string]int{
+	var modelCodeSize = map[string]asmInt{
 		"TINY":    0,
 		"SMALL":   0,
 		"COMPACT": 0,
@@ -80,7 +107,7 @@ func (p *parser) parseMODEL(itemNum int, i *item) {
 	}
 
 	// modelDataSize defines the @DataSize value for each memory model.
-	var modelDataSize = map[string]int{
+	var modelDataSize = map[string]asmInt{
 		"TINY":    0,
 		"SMALL":   0,
 		"COMPACT": 1,
@@ -93,7 +120,7 @@ func (p *parser) parseMODEL(itemNum int, i *item) {
 	}
 
 	// interfaceSym defines values for the @Interface symbol
-	var interfaceSym = map[string]int{
+	var interfaceSym = map[string]asmInt{
 		"NOLANGUAGE": 0,
 		"C":          1,
 		"SYSCALL":    2,
@@ -112,28 +139,45 @@ func (p *parser) parseMODEL(itemNum int, i *item) {
 		if p.syntax == "MASM" && model == "FLAT" {
 			modelVal = 7
 		}
-		p.syms["@MODEL"] = modelVal
-		p.syms["@CODESIZE"] = modelCodeSize[model]
-		p.syms["@DATASIZE"] = modelDataSize[model]
+		p.syms.set("@MODEL", modelVal, false)
+		p.syms.set("@CODESIZE", modelCodeSize[model], false)
+		p.syms.set("@DATASIZE", modelDataSize[model], false)
 	} else {
 		log.Printf("invalid memory model: %s\n", model)
 	}
 	if paramCount > 1 {
 		language := strings.ToUpper(string(i.params[1]))
 		if interfaceVal, ok := interfaceSym[language]; ok {
-			p.syms["@INTERFACE"] = interfaceVal
+			p.syms.set("@INTERFACE", interfaceVal, false)
 		} else {
 			log.Printf("invalid language: %s\n", language)
 		}
 	} else {
-		p.syms["@INTERFACE"] = interfaceSym["NOLANGUAGE"]
+		p.syms.set("@INTERFACE", interfaceSym["NOLANGUAGE"], false)
 	}
+}
+
+func (p *parser) parseEQU(itemNum int, i *item) {
+	p.syms.set(p.symLast, asmBytes(i.params[0]), i.val[0] != '=')
 }
 
 var parseFns = map[string]parseFn{
 	"PROC":   {(*parser).parsePROC, 0},
 	"ENDP":   {(*parser).parseENDP, 0},
 	".MODEL": {(*parser).parseMODEL, 1},
+	"=":      {(*parser).parseEQU, 1},
+	"EQU":    {(*parser).parseEQU, 1},
+}
+
+func (m *symMap) set(name string, val asmVal, constant bool) bool {
+	// TODO: Enforce constness for EQU while making sure that the cases in
+	// JWasm's EQUATE6.ASM still work.
+	if existing := (*m)[name]; existing.constant {
+		log.Printf("constant symbol %s already defined elsewhere", name)
+		return false
+	}
+	(*m)[name] = symbol{val: val, constant: constant}
+	return true
 }
 
 func (p *parser) eval(i *item) {
