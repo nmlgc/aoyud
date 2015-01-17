@@ -42,8 +42,6 @@ var conditionals = keywordGroup{
 	"IFDEF", "IFNDEF", "ENDIF", "ELSE",
 }
 
-const eof = 0
-
 var linebreak = charGroup{'\r', '\n'}
 var whitespace = charGroup{' ', '\t'}
 var paramDelim = append(charGroup{',', ';'}, linebreak...)
@@ -107,9 +105,8 @@ const (
 )
 
 type lexer struct {
-	input   []byte
+	stream  lexStream
 	paths   []string  // search paths for relative includes
-	pos     int       // current position in the input
 	curInst item      // current instruction being built
 	items   chan item // channel of scanned items
 }
@@ -134,26 +131,26 @@ func (l *lexer) lexINCLUDE(i *item) {
 // lexFirst scans labels, the symbol declaration, and the name of the
 // instruction.
 func lexFirst(l *lexer) stateFn {
-	first := l.nextUntil(&insDelim)
+	first := l.stream.nextUntil(&insDelim)
 	// Label?
-	if l.peek() == ':' {
-		l.next()
+	if l.stream.peek() == ':' {
+		l.stream.next()
 		l.emitWord(itemLabel, first)
 		return lexFirst
 	}
 	// Assignment? (Needs to be a special case because = doesn't need to be
 	// surrounded by spaces, and nextUntil() isn't designed to handle that.)
-	if l.peek() == '=' {
+	if l.stream.peek() == '=' {
 		l.emitWord(itemSymbol, first)
-		l.newInstruction([]byte{l.next()})
-	} else if second := l.peekUntil(&wordDelim); !instructions.matches(first) && declarators.matches(second) {
+		l.newInstruction([]byte{l.stream.next()})
+	} else if second := l.stream.peekUntil(&wordDelim); !instructions.matches(first) && declarators.matches(second) {
 		l.emitWord(itemSymbol, first)
-		l.newInstruction(l.nextUntil(&wordDelim))
+		l.newInstruction(l.stream.nextUntil(&wordDelim))
 	} else if strings.EqualFold(string(first), "comment") {
-		l.ignore(&whitespace)
-		delim := charGroup{l.next()}
-		l.nextUntil(&delim)
-		l.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
+		l.stream.ignore(&whitespace)
+		delim := charGroup{l.stream.next()}
+		l.stream.nextUntil(&delim)
+		l.stream.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
 		return lexFirst
 	} else {
 		l.newInstruction(first)
@@ -163,13 +160,13 @@ func lexFirst(l *lexer) stateFn {
 
 // lexParam scans parameters and comments.
 func lexParam(l *lexer) stateFn {
-	if param := l.nextParam(); len(param) > 0 {
+	if param := l.stream.nextParam(); len(param) > 0 {
 		l.curInst.params = append(l.curInst.params, param)
 	}
-	switch l.next() {
+	switch l.stream.next() {
 	case ';', '\\':
 		// Comment
-		l.nextUntil(&linebreak)
+		l.stream.nextUntil(&linebreak)
 		return lexFirst
 	case '\r', '\n':
 		return lexFirst
@@ -177,86 +174,6 @@ func lexParam(l *lexer) stateFn {
 		return nil
 	}
 	return lexParam
-}
-
-// ignore consumes bytes from the input until they stop matching the given
-// character group.
-func (l *lexer) ignore(delim *charGroup) {
-	for delim.matches(l.peek()) {
-		l.next()
-	}
-}
-
-// peek returns but does not consume the next byte in the input.
-func (l *lexer) peek() byte {
-	if l.pos >= len(l.input) {
-		return eof
-	}
-	return l.input[l.pos]
-}
-
-// next consumes the next byte in the input.
-func (l *lexer) next() byte {
-	ret := l.peek()
-	l.pos++
-	return ret
-}
-
-// peekUntil returns but does not consume the next word that is delimited by
-// the given character group.
-func (l *lexer) peekUntil(delim *charGroup) []byte {
-	pos := l.pos
-	ret := l.nextUntil(delim)
-	l.pos = pos
-	return ret
-}
-
-// nextUntil consumes the next word that is delimited by the given character group.
-func (l *lexer) nextUntil(delim *charGroup) []byte {
-	l.ignore(&whitespace)
-	start := l.pos
-	for !delim.matches(l.peek()) && l.peek() != eof {
-		l.next()
-	}
-	return l.input[start:l.pos]
-}
-
-// nextParam consumes and returns the next parameter to an instruction, taking
-// nesting into account.
-func (l *lexer) nextParam() []byte {
-	var quote byte
-	level := 0
-
-	l.ignore(&whitespace)
-	start := l.pos
-	for !(level == 0 && paramDelim.matches(l.peek())) && l.peek() != eof {
-		b := l.next()
-
-		if level == 0 && b == '\\' {
-			l.nextUntil(&linebreak)
-			l.ignore(&linebreak)
-		}
-		var leavecond bool
-		ll := nestLevelLeave[b]
-		if quote != 0 {
-			leavecond = (b == quote)
-		} else {
-			leavecond = (level & ll) != 0
-		}
-		if leavecond {
-			level &= ^ll
-			quote = 0
-		} else if le := nestLevelEnter[b]; le > level {
-			level |= le
-			if b == '\'' || b == '"' {
-				quote = b
-			}
-		}
-	}
-	for l.pos > start && whitespace.matches(l.input[l.pos-1]) {
-		l.pos--
-	}
-	return l.input[start:l.pos]
 }
 
 // emitInstruction emits the currently cached instruction.
@@ -320,9 +237,9 @@ func lexFile(filename string, paths []string) *lexer {
 	log.SetFlags(0)
 	log.SetPrefix(filename + ": ")
 	l := &lexer{
-		input: bytes,
-		items: make(chan item),
-		paths: append(paths, filepath.Dir(fullname)),
+		stream: *newLexStream(bytes),
+		items:  make(chan item),
+		paths:  append(paths, filepath.Dir(fullname)),
 	}
 	go l.run()
 	return l
