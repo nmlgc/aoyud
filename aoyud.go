@@ -36,6 +36,12 @@ var declarators = keywordGroup{
 	"GROUP", // groups
 }
 
+// conditionals lists all conditional directives that aren't kept in the parse
+// list.
+var conditionals = keywordGroup{
+	"IFDEF", "IFNDEF", "ENDIF", "ELSE",
+}
+
 const eof = 0
 
 var linebreak = charGroup{'\r', '\n'}
@@ -379,8 +385,9 @@ func main() {
 	p := parser{syntax: *syntax}
 
 	for i := range l.items {
-		p.eval(&i)
-		fmt.Print(i)
+		if p.eval(&i) {
+			fmt.Print(i)
+		}
 	}
 	p.end()
 }

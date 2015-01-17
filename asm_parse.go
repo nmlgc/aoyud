@@ -46,16 +46,20 @@ type parser struct {
 	procStart int
 	procNest  int
 	procName  string
+	// Conditionals
+	ifNest  int
+	ifMatch int
 }
 
 // parseFn represents a function handling a certain instruction or directive
-// at parsing time.
+// at parsing time. The return value indicates whether the instruction should
+// stay in the parser's instruction list.
 type parseFn struct {
-	f         func(p *parser, itemNum int, i *item)
+	f         func(p *parser, itemNum int, i *item) bool
 	minParams int
 }
 
-func (p *parser) parsePROC(itemNum int, i *item) {
+func (p *parser) parsePROC(itemNum int, i *item) bool {
 	if p.procNest == 0 {
 		p.procName = p.symLast
 		p.procStart = itemNum
@@ -63,9 +67,10 @@ func (p *parser) parsePROC(itemNum int, i *item) {
 		log.Printf("ignoring nested procedure %s\n", p.symLast)
 	}
 	p.procNest++
+	return true
 }
 
-func (p *parser) parseENDP(itemNum int, i *item) {
+func (p *parser) parseENDP(itemNum int, i *item) bool {
 	if p.procNest == 0 {
 		log.Printf("ignoring procedure %s without a PROC directive\n", p.symLast)
 	} else if p.procNest == 1 {
@@ -75,9 +80,10 @@ func (p *parser) parseENDP(itemNum int, i *item) {
 		)
 	}
 	p.procNest--
+	return true
 }
 
-func (p *parser) parseMODEL(itemNum int, i *item) {
+func (p *parser) parseMODEL(itemNum int, i *item) bool {
 	// modelSym defines the @Model value for each memory model.
 	var modelSym = map[string]asmInt{
 		"TINY":  1,
@@ -155,10 +161,46 @@ func (p *parser) parseMODEL(itemNum int, i *item) {
 	} else {
 		p.syms.set("@INTERFACE", interfaceSym["NOLANGUAGE"], false)
 	}
+	return true
 }
 
-func (p *parser) parseEQU(itemNum int, i *item) {
+func (p *parser) parseEQU(itemNum int, i *item) bool {
 	p.syms.set(p.symLast, asmBytes(i.params[0]), i.val[0] != '=')
+	return true
+}
+
+func (p *parser) parseIFDEF(itemNum int, i *item) bool {
+	_, defined := p.syms[string(i.params[0])]
+	mode := strings.ToUpper(i.val) == "IFDEF"
+	if defined == mode && p.ifMatch == p.ifNest {
+		p.ifMatch++
+	}
+	p.ifNest++
+	return false
+}
+
+func (p *parser) parseELSE(itemNum int, i *item) bool {
+	if p.ifNest == 0 {
+		log.Println("unmatched ELSE")
+		return true
+	} else if p.ifMatch == p.ifNest {
+		p.ifMatch--
+	} else if p.ifMatch == (p.ifNest - 1) {
+		p.ifMatch++
+	}
+	return false
+}
+
+func (p *parser) parseENDIF(itemNum int, i *item) bool {
+	if p.ifNest == 0 {
+		log.Println("found ENDIF without a matching condition")
+		return true
+	}
+	if p.ifMatch == p.ifNest {
+		p.ifMatch--
+	}
+	p.ifNest--
+	return false
 }
 
 var parseFns = map[string]parseFn{
@@ -167,6 +209,10 @@ var parseFns = map[string]parseFn{
 	".MODEL": {(*parser).parseMODEL, 1},
 	"=":      {(*parser).parseEQU, 1},
 	"EQU":    {(*parser).parseEQU, 1},
+	"IFDEF":  {(*parser).parseIFDEF, 1},
+	"IFNDEF": {(*parser).parseIFDEF, 1},
+	"ELSE":   {(*parser).parseELSE, 0},
+	"ENDIF":  {(*parser).parseENDIF, 0},
 }
 
 func (m *symMap) set(name string, val asmVal, constant bool) bool {
@@ -180,22 +226,28 @@ func (m *symMap) set(name string, val asmVal, constant bool) bool {
 	return true
 }
 
-func (p *parser) eval(i *item) {
+func (p *parser) eval(i *item) bool {
 	if p.syms == nil {
 		p.syms = make(symMap)
 	}
-	itemNum := len(p.instructions)
-
-	p.instructions = append(p.instructions, *i)
-	switch i.typ {
-	case itemSymbol:
-		p.symLast = i.val
-	case itemInstruction:
-		insFunc, ok := parseFns[strings.ToUpper(i.val)]
-		if ok && i.checkMinParams(insFunc.minParams) {
-			insFunc.f(p, itemNum, i)
+	evalCond := i.typ == itemInstruction && conditionals.matches([]byte(i.val))
+	if evalCond || (p.ifMatch >= p.ifNest) {
+		ret := true
+		switch i.typ {
+		case itemSymbol:
+			p.symLast = i.val
+		case itemInstruction:
+			insFunc, ok := parseFns[strings.ToUpper(i.val)]
+			if ok && i.checkMinParams(insFunc.minParams) {
+				ret = insFunc.f(p, len(p.instructions), i)
+			}
 		}
+		if ret {
+			p.instructions = append(p.instructions, *i)
+		}
+		return ret
 	}
+	return false
 }
 
 func (p *parser) end() {
