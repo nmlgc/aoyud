@@ -5,16 +5,40 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 )
 
 type asmVal fmt.Stringer
 
-type asmInt int
+// asmInt represents an integer that will be output in a defined base.
+type asmInt struct {
+	n    int64
+	base int
+}
 type asmBytes []byte
 
 func (v asmInt) String() string {
-	return fmt.Sprintf("%d", int(v))
+	if v.base == 0 {
+		v.base = 10
+	}
+	ret := strconv.FormatInt(v.n, v.base)
+	switch v.base {
+	case 2:
+		ret += "b"
+	case 8:
+		ret += "o"
+	case 16:
+		start := 0
+		if ret[0] == '-' || ret[0] == '+' {
+			start++
+		}
+		if ret[start] >= 'a' && ret[start] <= 'f' {
+			ret = ret[:start] + "0" + ret[start:]
+		}
+		ret += "h"
+	}
+	return ret
 }
 
 func (v asmBytes) String() string {
@@ -86,64 +110,64 @@ func (p *parser) parseENDP(itemNum int, i *item) bool {
 func (p *parser) parseMODEL(itemNum int, i *item) bool {
 	// modelSym defines the @Model value for each memory model.
 	var modelSym = map[string]asmInt{
-		"TINY":  1,
-		"SMALL": 2,
+		"TINY":  {n: 1},
+		"SMALL": {n: 2},
 		// Yes, the TASM manual is actually wrong here.
 		// For MASM, this is changed to 7.
-		"FLAT":    1,
-		"COMPACT": 3,
-		"MEDIUM":  4,
-		"LARGE":   5,
-		"HUGE":    6,
-		"TCHUGE":  7,
-		"TPASCAL": 0,
+		"FLAT":    {n: 1},
+		"COMPACT": {n: 3},
+		"MEDIUM":  {n: 4},
+		"LARGE":   {n: 5},
+		"HUGE":    {n: 6},
+		"TCHUGE":  {n: 7},
+		"TPASCAL": {n: 0},
 	}
 
 	// modelCodeSize defines the @CodeSize value for each memory model.
 	var modelCodeSize = map[string]asmInt{
-		"TINY":    0,
-		"SMALL":   0,
-		"COMPACT": 0,
-		"MEDIUM":  1,
-		"LARGE":   1,
-		"HUGE":    1,
-		"TCHUGE":  1,
-		"TPASCAL": 0,
-		"FLAT":    0,
+		"TINY":    {n: 0},
+		"SMALL":   {n: 0},
+		"COMPACT": {n: 0},
+		"MEDIUM":  {n: 1},
+		"LARGE":   {n: 1},
+		"HUGE":    {n: 1},
+		"TCHUGE":  {n: 1},
+		"TPASCAL": {n: 0},
+		"FLAT":    {n: 0},
 	}
 
 	// modelDataSize defines the @DataSize value for each memory model.
 	var modelDataSize = map[string]asmInt{
-		"TINY":    0,
-		"SMALL":   0,
-		"COMPACT": 1,
-		"MEDIUM":  0,
-		"LARGE":   1,
-		"HUGE":    2,
-		"TCHUGE":  2,
-		"TPASCAL": 1,
-		"FLAT":    0,
+		"TINY":    {n: 0},
+		"SMALL":   {n: 0},
+		"COMPACT": {n: 1},
+		"MEDIUM":  {n: 0},
+		"LARGE":   {n: 1},
+		"HUGE":    {n: 2},
+		"TCHUGE":  {n: 2},
+		"TPASCAL": {n: 1},
+		"FLAT":    {n: 0},
 	}
 
 	// interfaceSym defines values for the @Interface symbol
 	var interfaceSym = map[string]asmInt{
-		"NOLANGUAGE": 0,
-		"C":          1,
-		"SYSCALL":    2,
-		"STDCALL":    3,
-		"PASCAL":     4,
-		"FORTRAN":    5,
-		"BASIC":      6,
-		"FASTCALL":   7, // MASM only
-		"PROLOG":     7,
-		"CPP":        8,
+		"NOLANGUAGE": {n: 0},
+		"C":          {n: 1},
+		"SYSCALL":    {n: 2},
+		"STDCALL":    {n: 3},
+		"PASCAL":     {n: 4},
+		"FORTRAN":    {n: 5},
+		"BASIC":      {n: 6},
+		"FASTCALL":   {n: 7}, // MASM only
+		"PROLOG":     {n: 7},
+		"CPP":        {n: 8},
 	}
 
 	paramCount := len(i.params)
 	model := strings.ToUpper(string(i.params[0]))
 	if modelVal, ok := modelSym[model]; ok {
 		if p.syntax == "MASM" && model == "FLAT" {
-			modelVal = 7
+			modelVal.n = 7
 		}
 		p.syms.set("@MODEL", modelVal, false)
 		p.syms.set("@CODESIZE", modelCodeSize[model], false)
