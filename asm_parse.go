@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"strconv"
@@ -41,8 +42,58 @@ func (v asmInt) String() string {
 	return ret
 }
 
+// isAsmInt checks whether input is to be interpreted as a single integer
+// constant.
+func isAsmInt(input []byte) bool {
+	if len(input) == 0 {
+		return false
+	}
+	f := input[0]
+	validFirst := ((f >= '0' && f <= '9') || f == '+' || f == '-')
+	return validFirst && (bytes.IndexAny(input, " \t") == -1)
+}
+
+// newAsmInt parses the input as an integer constant.
+func newAsmInt(input []byte) (asmInt, error) {
+	length := len(input)
+	base := 0
+	switch input[length-1] {
+	case 'b':
+		base = 2
+	case 'o':
+		base = 8
+	case 't': // MASM only
+		base = 10
+	case 'h':
+		base = 16
+	}
+	if base != 0 {
+		input = input[:length-1]
+	} else {
+		base = 10
+	}
+	n, err := strconv.ParseInt(string(input), base, 0)
+	if err != nil {
+		return asmInt{}, err
+	}
+	return asmInt{n: n, base: base}, nil
+}
+
 func (v asmBytes) String() string {
 	return fmt.Sprintf("\"%s\"", []byte(v))
+}
+
+// newAsmVal returns the correct type of assembly value for input,
+// or a parse error.
+func (p *parser) newAsmVal(input []byte) (asmVal, error) {
+	if isAsmInt(input) {
+		newval, err := newAsmInt(input)
+		if err != nil {
+			log.Println(err)
+		}
+		return newval, err
+	}
+	return asmBytes(input), nil
 }
 
 type symbol struct {
@@ -189,7 +240,9 @@ func (p *parser) parseMODEL(itemNum int, i *item) bool {
 }
 
 func (p *parser) parseEQU(itemNum int, i *item) bool {
-	p.syms.set(p.symLast, asmBytes(i.params[0]), i.val[0] != '=')
+	if val, err := p.newAsmVal(i.params[0]); err == nil {
+		p.syms.set(p.symLast, val, i.val[0] != '=')
+	}
 	return true
 }
 
