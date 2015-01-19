@@ -83,17 +83,14 @@ func (v asmBytes) String() string {
 	return fmt.Sprintf("\"%s\"", []byte(v))
 }
 
-// newAsmVal returns the correct type of assembly value for input,
-// or a parse error.
-func (p *parser) newAsmVal(input []byte) (asmVal, error) {
-	if isAsmInt(input) {
-		newval, err := newAsmInt(input)
-		if err != nil {
-			log.Println(err)
-		}
-		return newval, err
+// newAsmVal returns the correct type of assembly value for input.
+func (p *parser) newAsmVal(input []byte) asmVal {
+	if newval, err := p.shunt(input); err == nil {
+		return newval
+	} else {
+		log.Println(err)
+		return asmBytes(input)
 	}
-	return asmBytes(input), nil
 }
 
 type symbol struct {
@@ -240,9 +237,7 @@ func (p *parser) parseMODEL(itemNum int, i *item) bool {
 }
 
 func (p *parser) parseEQU(itemNum int, i *item) bool {
-	if val, err := p.newAsmVal(i.params[0]); err == nil {
-		p.syms.set(p.symLast, val, i.val[0] != '=')
-	}
+	p.syms.set(p.symLast, p.newAsmVal(i.params[0]), i.val[0] != '=')
 	return true
 }
 
@@ -290,6 +285,16 @@ var parseFns = map[string]parseFn{
 	"IFNDEF": {(*parser).parseIFDEF, 1},
 	"ELSE":   {(*parser).parseELSE, 0},
 	"ENDIF":  {(*parser).parseENDIF, 0},
+}
+
+// get returns the value of a symbol that is meant to exist in the map, or an
+// error if it doesn't.
+func (m *symMap) get(name string) (asmVal, error) {
+	// TODO: OPTION CASEMAP.
+	if ret, ok := (*m)[name]; ok {
+		return ret.val, nil
+	}
+	return nil, fmt.Errorf("unknown symbol %s", name)
 }
 
 func (m *symMap) set(name string, val asmVal, constant bool) bool {

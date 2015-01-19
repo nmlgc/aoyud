@@ -47,6 +47,7 @@ var whitespace = charGroup{' ', '\t'}
 var paramDelim = append(charGroup{',', ';'}, linebreak...)
 var wordDelim = append(append(charGroup{':'}, whitespace...), paramDelim...)
 var insDelim = append(charGroup{'='}, wordDelim...)
+var shuntDelim = append(charGroup{'+', '-', '*', '/', '|', '(', ')'}, whitespace...)
 
 // nestLevelEnter and nestLevelLeave map the various punctuation marks used in
 // TASM's syntax to bit flags ordered by their respective nesting priorities.
