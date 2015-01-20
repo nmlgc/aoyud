@@ -153,7 +153,7 @@ func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (shuntVal, erro
 	if nextOp, ok := (*opSet)[tokenUpper]; ok {
 		return &nextOp, nil
 	}
-	return p.syms.get(tokenString)
+	return p.getSym(p.toSymCase(tokenString))
 }
 
 // perform applies the function of the given operator on the top of valStack.

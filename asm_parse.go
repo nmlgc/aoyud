@@ -113,6 +113,7 @@ type parser struct {
 	// General state
 	syntax  string
 	syms    symMap
+	symCase bool   // case sensitivity for symbols
 	symLast string // last symbol declaration encountered
 	// Open procedures
 	procStart int
@@ -121,6 +122,23 @@ type parser struct {
 	// Conditionals
 	ifNest  int
 	ifMatch int
+}
+
+func (p *parser) toSymCase(s string) string {
+	if !p.symCase {
+		return strings.ToUpper(s)
+	}
+	return s
+}
+
+func splitColon(s []byte) (string, string) {
+	var key, val string
+	split := bytes.SplitN(s, []byte{':'}, 2)
+	key = string(bytes.TrimSpace(split[0]))
+	if len(split) > 1 {
+		val = string(bytes.TrimSpace(split[1]))
+	}
+	return key, val
 }
 
 // parseFn represents a function handling a certain instruction or directive
@@ -217,32 +235,32 @@ func (p *parser) parseMODEL(itemNum int, i *item) bool {
 		if p.syntax == "MASM" && model == "FLAT" {
 			modelVal.n = 7
 		}
-		p.syms.set("@MODEL", modelVal, false)
-		p.syms.set("@CODESIZE", modelCodeSize[model], false)
-		p.syms.set("@DATASIZE", modelDataSize[model], false)
+		p.setSym("@MODEL", modelVal, false)
+		p.setSym("@CODESIZE", modelCodeSize[model], false)
+		p.setSym("@DATASIZE", modelDataSize[model], false)
 	} else {
 		log.Printf("invalid memory model: %s\n", model)
 	}
 	if paramCount > 1 {
 		language := strings.ToUpper(string(i.params[1]))
 		if interfaceVal, ok := interfaceSym[language]; ok {
-			p.syms.set("@INTERFACE", interfaceVal, false)
+			p.setSym("@INTERFACE", interfaceVal, false)
 		} else {
 			log.Printf("invalid language: %s\n", language)
 		}
 	} else {
-		p.syms.set("@INTERFACE", interfaceSym["NOLANGUAGE"], false)
+		p.setSym("@INTERFACE", interfaceSym["NOLANGUAGE"], false)
 	}
 	return true
 }
 
 func (p *parser) parseEQU(itemNum int, i *item) bool {
-	p.syms.set(p.symLast, p.newAsmVal(i.params[0]), i.val[0] != '=')
+	p.setSym(p.symLast, p.newAsmVal(i.params[0]), i.val[0] != '=')
 	return true
 }
 
 func (p *parser) parseIFDEF(itemNum int, i *item) bool {
-	_, defined := p.syms[string(i.params[0])]
+	_, defined := p.syms[p.toSymCase(string(i.params[0]))]
 	mode := strings.ToUpper(i.val) == "IFDEF"
 	if defined == mode && p.ifMatch == p.ifNest {
 		p.ifMatch++
@@ -275,6 +293,29 @@ func (p *parser) parseENDIF(itemNum int, i *item) bool {
 	return false
 }
 
+func (p *parser) parseOPTION(itemNum int, i *item) bool {
+	var options = map[string](map[string]func()){
+		"CASEMAP": {
+			"NONE":      func() { p.symCase = true },
+			"NOTPUBLIC": func() { p.symCase = false },
+			"ALL":       func() { p.symCase = false },
+		},
+	}
+	for _, param := range i.params {
+		key, val := splitColon(param)
+		key = strings.ToUpper(key)
+		val = strings.ToUpper(val)
+		if opt, keyOK := options[key]; keyOK {
+			if fn, valOK := opt[val]; valOK {
+				fn()
+			} else {
+				log.Printf("illegal value for OPTION %s: %s", key, val)
+			}
+		}
+	}
+	return true
+}
+
 var parseFns = map[string]parseFn{
 	"PROC":   {(*parser).parsePROC, 0},
 	"ENDP":   {(*parser).parseENDP, 0},
@@ -285,26 +326,27 @@ var parseFns = map[string]parseFn{
 	"IFNDEF": {(*parser).parseIFDEF, 1},
 	"ELSE":   {(*parser).parseELSE, 0},
 	"ENDIF":  {(*parser).parseENDIF, 0},
+	"OPTION": {(*parser).parseOPTION, 1},
 }
 
-// get returns the value of a symbol that is meant to exist in the map, or an
-// error if it doesn't.
-func (m *symMap) get(name string) (asmVal, error) {
-	// TODO: OPTION CASEMAP.
-	if ret, ok := (*m)[name]; ok {
+// getSym returns the value of a symbol that is meant to exist in the map, or
+// an error if it doesn't.
+func (p *parser) getSym(name string) (asmVal, error) {
+	if ret, ok := p.syms[p.toSymCase(name)]; ok {
 		return ret.val, nil
 	}
 	return nil, fmt.Errorf("unknown symbol %s", name)
 }
 
-func (m *symMap) set(name string, val asmVal, constant bool) bool {
+func (p *parser) setSym(name string, val asmVal, constant bool) bool {
 	// TODO: Enforce constness for EQU while making sure that the cases in
 	// JWasm's EQUATE6.ASM still work.
-	if existing := (*m)[name]; existing.constant {
-		log.Printf("constant symbol %s already defined elsewhere", name)
+	realName := p.toSymCase(name)
+	if existing := p.syms[realName]; existing.constant {
+		log.Printf("constant symbol %s already defined elsewhere", realName)
 		return false
 	}
-	(*m)[name] = symbol{val: val, constant: constant}
+	p.syms[realName] = symbol{val: val, constant: constant}
 	return true
 }
 
