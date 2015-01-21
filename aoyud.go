@@ -39,7 +39,7 @@ var declarators = keywordGroup{
 // conditionals lists all conditional directives that aren't kept in the parse
 // list.
 var conditionals = keywordGroup{
-	"IFDEF", "IFNDEF", "ENDIF", "ELSE",
+	"IFDEF", "IFNDEF", "IF", "IFE", "ELSEIF", "ELSEIFE", "ELSE", "ENDIF",
 }
 
 var linebreak = charGroup{'\r', '\n'}

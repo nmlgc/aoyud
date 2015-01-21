@@ -120,8 +120,9 @@ type parser struct {
 	procNest  int
 	procName  string
 	// Conditionals
-	ifNest  int
-	ifMatch int
+	ifNest  int // IF nesting level
+	ifMatch int // Last IF nesting level that evaluated to true
+	ifElse  int // Last IF nesting level that may have an ELSE* block
 }
 
 func (p *parser) toSymCase(s string) string {
@@ -259,26 +260,64 @@ func (p *parser) parseEQU(itemNum int, i *item) bool {
 	return true
 }
 
-func (p *parser) parseIFDEF(itemNum int, i *item) bool {
-	_, defined := p.syms[p.toSymCase(string(i.params[0]))]
-	mode := strings.ToUpper(i.val) == "IFDEF"
-	if defined == mode && p.ifMatch == p.ifNest {
+func (p *parser) evalIf(match bool) bool {
+	if match && p.ifMatch == p.ifNest {
 		p.ifMatch++
+	} else {
+		p.ifElse++
 	}
 	p.ifNest++
 	return false
+}
+
+func (p *parser) evalElseif(match bool) bool {
+	if p.ifMatch == p.ifNest {
+		p.ifMatch--
+	} else if p.ifMatch == (p.ifNest-1) && p.ifNest == p.ifElse && match {
+		p.ifMatch++
+		p.ifElse--
+	}
+	return false
+}
+
+func (p *parser) parseIFDEF(itemNum int, i *item) bool {
+	_, defined := p.syms[p.toSymCase(string(i.params[0]))]
+	mode := strings.ToUpper(i.val) == "IFDEF"
+	return p.evalIf(defined == mode)
+}
+
+func (p *parser) parseIF(itemNum int, i *item) bool {
+	mode := strings.ToUpper(i.val) == "IF"
+	return p.evalIf(p.evalBool(i.params[0]) == mode)
+}
+
+func (p *parser) parseELSEIFDEF(itemNum int, i *item) bool {
+	directive := strings.ToUpper(i.val)
+	if p.ifNest == 0 {
+		log.Println("unmatched", directive)
+		return true
+	}
+	_, defined := p.syms[p.toSymCase(string(i.params[0]))]
+	mode := directive == "ELSEIFDEF"
+	return p.evalElseif(defined == mode)
+}
+
+func (p *parser) parseELSEIF(itemNum int, i *item) bool {
+	directive := strings.ToUpper(i.val)
+	if p.ifNest == 0 {
+		log.Println("unmatched", directive)
+		return true
+	}
+	mode := directive == "ELSEIF"
+	return p.evalElseif(p.evalBool(i.params[0]) == mode)
 }
 
 func (p *parser) parseELSE(itemNum int, i *item) bool {
 	if p.ifNest == 0 {
 		log.Println("unmatched ELSE")
 		return true
-	} else if p.ifMatch == p.ifNest {
-		p.ifMatch--
-	} else if p.ifMatch == (p.ifNest - 1) {
-		p.ifMatch++
 	}
-	return false
+	return p.evalElseif(true)
 }
 
 func (p *parser) parseENDIF(itemNum int, i *item) bool {
@@ -288,6 +327,9 @@ func (p *parser) parseENDIF(itemNum int, i *item) bool {
 	}
 	if p.ifMatch == p.ifNest {
 		p.ifMatch--
+	}
+	if p.ifElse == p.ifNest {
+		p.ifElse--
 	}
 	p.ifNest--
 	return false
@@ -317,16 +359,22 @@ func (p *parser) parseOPTION(itemNum int, i *item) bool {
 }
 
 var parseFns = map[string]parseFn{
-	"PROC":   {(*parser).parsePROC, 0},
-	"ENDP":   {(*parser).parseENDP, 0},
-	".MODEL": {(*parser).parseMODEL, 1},
-	"=":      {(*parser).parseEQU, 1},
-	"EQU":    {(*parser).parseEQU, 1},
-	"IFDEF":  {(*parser).parseIFDEF, 1},
-	"IFNDEF": {(*parser).parseIFDEF, 1},
-	"ELSE":   {(*parser).parseELSE, 0},
-	"ENDIF":  {(*parser).parseENDIF, 0},
-	"OPTION": {(*parser).parseOPTION, 1},
+	"PROC":       {(*parser).parsePROC, 0},
+	"ENDP":       {(*parser).parseENDP, 0},
+	".MODEL":     {(*parser).parseMODEL, 1},
+	"=":          {(*parser).parseEQU, 1},
+	"EQU":        {(*parser).parseEQU, 1},
+	"IFDEF":      {(*parser).parseIFDEF, 1},
+	"IFNDEF":     {(*parser).parseIFDEF, 1},
+	"IF":         {(*parser).parseIF, 1},
+	"IFE":        {(*parser).parseIF, 1},
+	"ELSEIFDEF":  {(*parser).parseELSEIFDEF, 1},
+	"ELSEIFNDEF": {(*parser).parseELSEIFDEF, 1},
+	"ELSEIF":     {(*parser).parseELSEIF, 1},
+	"ELSEIFE":    {(*parser).parseELSEIF, 1},
+	"ELSE":       {(*parser).parseELSE, 0},
+	"ENDIF":      {(*parser).parseENDIF, 0},
+	"OPTION":     {(*parser).parseOPTION, 1},
 }
 
 // getSym returns the value of a symbol that is meant to exist in the map, or

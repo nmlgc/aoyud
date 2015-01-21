@@ -237,3 +237,15 @@ func (p *parser) shunt(expr []byte) (asmInt, error) {
 	}
 	return valStack[0], nil
 }
+
+// evalBool wraps shunt, displays its error message, and casts its result to a
+// bool.
+func (p *parser) evalBool(expr []byte) bool {
+	ret, err := p.shunt(expr)
+	// Default to false in the case of an error... for now, at least.
+	if err != nil {
+		log.Println(err)
+		return false
+	}
+	return ret.n != 0
+}
