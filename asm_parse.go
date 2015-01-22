@@ -108,6 +108,13 @@ func (s symbol) String() string {
 
 type symMap map[string]symbol
 
+// nestableBlock represents a type of named block that can be nested.
+type nestableBlock struct {
+	name  string // Name of level 1
+	start int    // First item in the instruction list that belongs to level 1
+	nest  int    // Current nesting level
+}
+
 type parser struct {
 	instructions []item
 	// General state
@@ -115,10 +122,8 @@ type parser struct {
 	syms    symMap
 	symCase bool   // case sensitivity for symbols
 	symLast string // last symbol declaration encountered
-	// Open procedures
-	procStart int
-	procNest  int
-	procName  string
+	// Open blocks
+	proc  nestableBlock
 	// Conditionals
 	ifNest  int // IF nesting level
 	ifMatch int // Last IF nesting level that evaluated to true
@@ -151,26 +156,26 @@ type parseFn struct {
 }
 
 func (p *parser) parsePROC(itemNum int, i *item) bool {
-	if p.procNest == 0 {
-		p.procName = p.symLast
-		p.procStart = itemNum
+	if p.proc.nest == 0 {
+		p.proc.name = p.symLast
+		p.proc.start = itemNum
 	} else {
 		log.Printf("ignoring nested procedure %s\n", p.symLast)
 	}
-	p.procNest++
+	p.proc.nest++
 	return true
 }
 
 func (p *parser) parseENDP(itemNum int, i *item) bool {
-	if p.procNest == 0 {
+	if p.proc.nest == 0 {
 		log.Printf("ignoring procedure %s without a PROC directive\n", p.symLast)
-	} else if p.procNest == 1 {
+	} else if p.proc.nest == 1 {
 		log.Printf(
 			"found procedure %s ranging from lex items #%d-#%d\n",
-			p.procName, p.procStart, itemNum,
+			p.proc.name, p.proc.start, itemNum,
 		)
 	}
-	p.procNest--
+	p.proc.nest--
 	return true
 }
 
@@ -423,8 +428,8 @@ func (p *parser) eval(i *item) bool {
 }
 
 func (p *parser) end() {
-	if p.procNest != 0 {
-		log.Printf("ignoring procedure %s without an ENDP directive\n", p.procName)
+	if p.proc.nest != 0 {
+		log.Printf("ignoring procedure %s without an ENDP directive\n", p.proc.name)
 	}
 	if len(p.syms) > 0 {
 		log.Println("Symbols:", p.syms)
