@@ -42,6 +42,10 @@ var conditionals = keywordGroup{
 	"IFDEF", "IFNDEF", "IF", "IFE", "ELSEIF", "ELSEIFE", "ELSE", "ENDIF",
 }
 
+var macros = keywordGroup{
+	"MACRO", "FOR", "FORC", "REPT", "REPEAT", "WHILE", "IRP", "IRPC", "ENDM",
+}
+
 var linebreak = charGroup{'\r', '\n'}
 var whitespace = charGroup{' ', '\t'}
 var paramDelim = append(charGroup{',', ';'}, linebreak...)
@@ -86,6 +90,10 @@ func (g *keywordGroup) matches(word []byte) bool {
 		}
 	}
 	return false
+}
+
+func (g *keywordGroup) matchesInstruction(i *item) bool {
+	return i.typ == itemInstruction && g.matches([]byte(i.val))
 }
 
 // item represents a token or text string returned from the scanner.

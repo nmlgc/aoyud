@@ -124,6 +124,7 @@ type parser struct {
 	symLast string // last symbol declaration encountered
 	// Open blocks
 	proc  nestableBlock
+	macro nestableBlock
 	// Conditionals
 	ifNest  int // IF nesting level
 	ifMatch int // Last IF nesting level that evaluated to true
@@ -363,6 +364,29 @@ func (p *parser) parseOPTION(itemNum int, i *item) bool {
 	return true
 }
 
+func (p *parser) parseMACRO(itemNum int, i *item) bool {
+	if p.macro.nest == 0 {
+		p.macro.name = p.symLast
+		p.macro.start = itemNum
+	}
+	p.macro.nest++
+	return true
+}
+
+func (p *parser) parseENDM(itemNum int, i *item) bool {
+	if p.macro.nest == 1 && p.macro.name != "" {
+		p.macro.name = ""
+	}
+	p.macro.nest--
+	return true
+}
+
+// Placeholder for any non-MACRO block terminated with ENDM
+func (p *parser) parseDummyMacro(itemNum int, i *item) bool {
+	p.macro.nest++
+	return true
+}
+
 var parseFns = map[string]parseFn{
 	"PROC":       {(*parser).parsePROC, 0},
 	"ENDP":       {(*parser).parseENDP, 0},
@@ -380,6 +404,16 @@ var parseFns = map[string]parseFn{
 	"ELSE":       {(*parser).parseELSE, 0},
 	"ENDIF":      {(*parser).parseENDIF, 0},
 	"OPTION":     {(*parser).parseOPTION, 1},
+	// Macros
+	"MACRO":  {(*parser).parseMACRO, 0},
+	"FOR":    {(*parser).parseDummyMacro, 1},
+	"FORC":   {(*parser).parseDummyMacro, 1},
+	"REPT":   {(*parser).parseDummyMacro, 1},
+	"REPEAT": {(*parser).parseDummyMacro, 1},
+	"WHILE":  {(*parser).parseDummyMacro, 1},
+	"IRP":    {(*parser).parseDummyMacro, 2},
+	"IRPC":   {(*parser).parseDummyMacro, 2},
+	"ENDM":   {(*parser).parseENDM, 0},
 }
 
 // getSym returns the value of a symbol that is meant to exist in the map, or
@@ -407,16 +441,17 @@ func (p *parser) eval(i *item) bool {
 	if p.syms == nil {
 		p.syms = make(symMap)
 	}
-	evalCond := i.typ == itemInstruction && conditionals.matches([]byte(i.val))
-	if evalCond || (p.ifMatch >= p.ifNest) {
+	if conditionals.matchesInstruction(i) || (p.ifMatch >= p.ifNest) {
 		ret := true
-		switch i.typ {
-		case itemSymbol:
-			p.symLast = i.val
-		case itemInstruction:
-			insFunc, ok := parseFns[strings.ToUpper(i.val)]
-			if ok && i.checkMinParams(insFunc.minParams) {
-				ret = insFunc.f(p, len(p.instructions), i)
+		if macros.matchesInstruction(i) || (p.macro.nest == 0) {
+			switch i.typ {
+			case itemSymbol:
+				p.symLast = i.val
+			case itemInstruction:
+				insFunc, ok := parseFns[strings.ToUpper(i.val)]
+				if ok && i.checkMinParams(insFunc.minParams) {
+					ret = insFunc.f(p, len(p.instructions), i)
+				}
 			}
 		}
 		if ret {
