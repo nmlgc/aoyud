@@ -17,7 +17,6 @@ type asmInt struct {
 	n    int64
 	base int
 }
-type asmBytes []byte
 
 func (v asmInt) String() string {
 	if v.base == 0 {
@@ -79,8 +78,90 @@ func newAsmInt(input []byte) (asmInt, error) {
 	return asmInt{n: n, base: base}, nil
 }
 
+type asmBytes []byte
+
 func (v asmBytes) String() string {
 	return fmt.Sprintf("\"%s\"", []byte(v))
+}
+
+type asmMacroArg struct {
+	name string
+	typ  string
+	def  string
+}
+
+func (v asmMacroArg) String() string {
+	ret := v.name
+	if v.typ != "" {
+		ret += ":" + v.typ
+		if v.typ == "=" {
+			ret += v.def
+		}
+	}
+	return ret
+}
+
+type asmMacro struct {
+	args []asmMacroArg
+	code []item
+}
+
+func (v asmMacro) String() string {
+	ret := "MACRO"
+	for i, arg := range v.args {
+		if i != 0 {
+			ret += ", "
+		} else {
+			ret += "\t"
+		}
+		ret += arg.String()
+	}
+	ret += "\n"
+	for _, ins := range v.code {
+		ret += ins.String()
+	}
+	return ret + "\tENDM"
+}
+
+// newMacro creates a new multiline macro ending at itemNum.
+func (p *parser) newMacro(itemNum int) (asmMacro, error) {
+	start := p.instructions[p.macro.start]
+	args := make([]asmMacroArg, len(start.params))
+	for i := range start.params {
+		nameOrg, typOrg := splitColon(start.params[i])
+		args[i].name = p.toSymCase(nameOrg)
+		args[i].typ = strings.ToUpper(typOrg)
+		// Verify types
+		switch args[i].typ {
+		case "":
+		case "REQ":
+			break
+		case "REST":
+		case "VARARG":
+			if i != len(start.params)-1 {
+				// TASM would actually accept this, but we better
+				// complain since it doesn't make sense at all.
+				return asmMacro{}, fmt.Errorf(
+					"macro %s: %s:%s must be the last parameter\n",
+					p.macro.name, args[i].name, args[i].typ,
+				)
+			}
+		default:
+			if typOrg[0] == '=' {
+				args[i].typ = "="
+				args[i].def = strings.TrimSpace(typOrg[1:])
+			} else {
+				return asmMacro{}, fmt.Errorf(
+					"macro %s: invalid argument type: %s",
+					p.macro.name, args[i].typ,
+				)
+			}
+		}
+	}
+	return asmMacro{
+		code: p.instructions[p.macro.start+1 : itemNum],
+		args: args,
+	}, nil
 }
 
 // newAsmVal returns the correct type of assembly value for input.
@@ -375,6 +456,12 @@ func (p *parser) parseMACRO(itemNum int, i *item) bool {
 
 func (p *parser) parseENDM(itemNum int, i *item) bool {
 	if p.macro.nest == 1 && p.macro.name != "" {
+		macro, err := p.newMacro(itemNum)
+		if err != nil {
+			log.Println(err)
+		} else {
+			p.setSym(p.macro.name, macro, false)
+		}
 		p.macro.name = ""
 	}
 	p.macro.nest--
