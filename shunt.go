@@ -200,42 +200,55 @@ func (valStack *shuntValStack) evalOp(opStack *shuntOpStack, newOp *shuntOp) *sh
 	return &unaryOperators
 }
 
-// shunt performs the arithmetic expression in expr and returns the result.
-func (p *parser) shunt(expr []byte) (asmInt, error) {
-	errInvalid := fmt.Errorf("invalid arithmetic expression: %s", expr)
-	valStack := shuntValStack{}
-	opStack := shuntOpStack{}
-	stream := newLexStream(expr)
-	opSet := &unaryOperators
+type shuntState struct {
+	valStack shuntValStack
+	opStack  shuntOpStack
+	opSet    *shuntOpMap
+}
 
-	for stream.peek() != eof {
-		token, err := p.nextShuntToken(stream, opSet)
+func (p *parser) shuntLoop(s *shuntState, expr []byte) error {
+	var err error = nil
+	var token shuntVal
+	stream := newLexStream(expr)
+	for stream.peek() != eof && err == nil {
+		token, err = p.nextShuntToken(stream, s.opSet)
 		if err != nil {
-			return asmInt{}, err
+			return err
 		}
 		switch token.(type) {
 		case asmInt:
-			valStack.push(token.(asmInt))
-			opSet = &binaryOperators
+			s.valStack.push(token.(asmInt))
+			s.opSet = &binaryOperators
 		case *shuntOp:
-			opSet = valStack.evalOp(&opStack, token.(*shuntOp))
+			s.opSet = s.valStack.evalOp(&s.opStack, token.(*shuntOp))
+		case asmBytes:
+			err = p.shuntLoop(s, token.(asmBytes))
 		default:
-			return asmInt{}, errInvalid
+			err = fmt.Errorf("unknown value: %s", token)
 		}
 		stream.ignore(&whitespace)
 	}
-	for top := opStack.peek(); top != nil; top = opStack.peek() {
-		opStack.pop()
+	return err
+}
+
+// shunt performs the arithmetic expression in expr and returns the result.
+func (p *parser) shunt(expr []byte) (asmInt, error) {
+	s := &shuntState{opSet: &unaryOperators}
+	if err := p.shuntLoop(s, expr); err != nil {
+		return asmInt{}, err
+	}
+	for top := s.opStack.peek(); top != nil; top = s.opStack.peek() {
+		s.opStack.pop()
 		if top.id == opParenL {
 			log.Printf("missing a right parenthesis\n")
 		} else {
-			valStack.performOp(top)
+			s.valStack.performOp(top)
 		}
 	}
-	if len(valStack) != 1 {
-		return asmInt{}, errInvalid
+	if len(s.valStack) != 1 {
+		return asmInt{}, fmt.Errorf("invalid arithmetic expression: %s", expr)
 	}
-	return valStack[0], nil
+	return s.valStack[0], nil
 }
 
 // evalBool wraps shunt, displays its error message, and casts its result to a
