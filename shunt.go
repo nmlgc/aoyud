@@ -148,12 +148,11 @@ func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (shuntVal, erro
 	} else if isAsmInt(token) {
 		return newAsmInt(token)
 	}
-	tokenString := string(token)
-	tokenUpper := strings.ToUpper(tokenString)
+	tokenUpper := strings.ToUpper(token)
 	if nextOp, ok := (*opSet)[tokenUpper]; ok {
 		return &nextOp, nil
 	}
-	return p.getSym(p.toSymCase(tokenString))
+	return p.getSym(p.toSymCase(token))
 }
 
 // perform applies the function of the given operator on the top of valStack.
@@ -206,7 +205,7 @@ type shuntState struct {
 	opSet    *shuntOpMap
 }
 
-func (p *parser) shuntLoop(s *shuntState, expr []byte) error {
+func (p *parser) shuntLoop(s *shuntState, expr string) error {
 	var err error = nil
 	var token shuntVal
 	stream := newLexStream(expr)
@@ -221,8 +220,8 @@ func (p *parser) shuntLoop(s *shuntState, expr []byte) error {
 			s.opSet = &binaryOperators
 		case *shuntOp:
 			s.opSet = s.valStack.evalOp(&s.opStack, token.(*shuntOp))
-		case asmBytes:
-			err = p.shuntLoop(s, token.(asmBytes))
+		case asmString:
+			err = p.shuntLoop(s, string(token.(asmString)))
 		default:
 			err = fmt.Errorf("unknown value: %s", token)
 		}
@@ -232,7 +231,7 @@ func (p *parser) shuntLoop(s *shuntState, expr []byte) error {
 }
 
 // shunt performs the arithmetic expression in expr and returns the result.
-func (p *parser) shunt(expr []byte) (asmInt, error) {
+func (p *parser) shunt(expr string) (asmInt, error) {
 	s := &shuntState{opSet: &unaryOperators}
 	if err := p.shuntLoop(s, expr); err != nil {
 		return asmInt{}, err
@@ -253,7 +252,7 @@ func (p *parser) shunt(expr []byte) (asmInt, error) {
 
 // evalBool wraps shunt, displays its error message, and casts its result to a
 // bool.
-func (p *parser) evalBool(expr []byte) bool {
+func (p *parser) evalBool(expr string) bool {
 	ret, err := p.shunt(expr)
 	// Default to false in the case of an error... for now, at least.
 	if err != nil {

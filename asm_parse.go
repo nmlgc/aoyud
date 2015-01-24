@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"strconv"
@@ -43,17 +42,17 @@ func (v asmInt) String() string {
 
 // isAsmInt checks whether input is to be interpreted as a single integer
 // constant.
-func isAsmInt(input []byte) bool {
+func isAsmInt(input string) bool {
 	if len(input) == 0 {
 		return false
 	}
 	f := input[0]
 	validFirst := ((f >= '0' && f <= '9') || f == '+' || f == '-')
-	return validFirst && (bytes.IndexAny(input, " \t") == -1)
+	return validFirst && (strings.IndexAny(input, " \t") == -1)
 }
 
 // newAsmInt parses the input as an integer constant.
-func newAsmInt(input []byte) (asmInt, error) {
+func newAsmInt(input string) (asmInt, error) {
 	length := len(input)
 	base := 0
 	switch input[length-1] {
@@ -71,17 +70,17 @@ func newAsmInt(input []byte) (asmInt, error) {
 	} else {
 		base = 10
 	}
-	n, err := strconv.ParseInt(string(input), base, 0)
+	n, err := strconv.ParseInt(input, base, 0)
 	if err != nil {
 		return asmInt{}, err
 	}
 	return asmInt{n: n, base: base}, nil
 }
 
-type asmBytes []byte
+type asmString string
 
-func (v asmBytes) String() string {
-	return fmt.Sprintf("\"%s\"", []byte(v))
+func (v asmString) String() string {
+	return "\"" + string(v) + "\""
 }
 
 type asmMacroArg struct {
@@ -165,12 +164,12 @@ func (p *parser) newMacro(itemNum int) (asmMacro, error) {
 }
 
 // newAsmVal returns the correct type of assembly value for input.
-func (p *parser) newAsmVal(input []byte) asmVal {
+func (p *parser) newAsmVal(input string) asmVal {
 	if newval, err := p.shunt(input); err == nil {
 		return newval
 	} else {
 		log.Println(err)
-		return asmBytes(input)
+		return asmString(input)
 	}
 }
 
@@ -219,12 +218,12 @@ func (p *parser) toSymCase(s string) string {
 	return s
 }
 
-func splitColon(s []byte) (string, string) {
+func splitColon(s string) (string, string) {
 	var key, val string
-	split := bytes.SplitN(s, []byte{':'}, 2)
-	key = string(bytes.TrimSpace(split[0]))
+	split := strings.SplitN(s, ":", 2)
+	key = strings.TrimSpace(split[0])
 	if len(split) > 1 {
-		val = string(bytes.TrimSpace(split[1]))
+		val = strings.TrimSpace(split[1])
 	}
 	return key, val
 }
@@ -318,7 +317,7 @@ func (p *parser) parseMODEL(itemNum int, i *item) bool {
 	}
 
 	paramCount := len(i.params)
-	model := strings.ToUpper(string(i.params[0]))
+	model := strings.ToUpper(i.params[0])
 	if modelVal, ok := modelSym[model]; ok {
 		if p.syntax == "MASM" && model == "FLAT" {
 			modelVal.n = 7
@@ -330,7 +329,7 @@ func (p *parser) parseMODEL(itemNum int, i *item) bool {
 		log.Printf("invalid memory model: %s\n", model)
 	}
 	if paramCount > 1 {
-		language := strings.ToUpper(string(i.params[1]))
+		language := strings.ToUpper(i.params[1])
 		if interfaceVal, ok := interfaceSym[language]; ok {
 			p.setSym("@INTERFACE", interfaceVal, false)
 		} else {
@@ -368,7 +367,7 @@ func (p *parser) evalElseif(match bool) bool {
 }
 
 func (p *parser) parseIFDEF(itemNum int, i *item) bool {
-	_, defined := p.syms[p.toSymCase(string(i.params[0]))]
+	_, defined := p.syms[p.toSymCase(i.params[0])]
 	mode := strings.ToUpper(i.val) == "IFDEF"
 	return p.evalIf(defined == mode)
 }
@@ -384,7 +383,7 @@ func (p *parser) parseELSEIFDEF(itemNum int, i *item) bool {
 		log.Println("unmatched", directive)
 		return true
 	}
-	_, defined := p.syms[p.toSymCase(string(i.params[0]))]
+	_, defined := p.syms[p.toSymCase(i.params[0])]
 	mode := directive == "ELSEIFDEF"
 	return p.evalElseif(defined == mode)
 }

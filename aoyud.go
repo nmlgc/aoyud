@@ -1,7 +1,7 @@
 /*
  * As of yet unnamed assembly-to-C decompiler.
  * Implemented in a similar fashion as the lexer from Go's own text/template
- * package. Operates in bytes to allow input files in any encoding.
+ * package.
  */
 
 package main
@@ -79,13 +79,12 @@ func (g *charGroup) matches(b byte) bool {
 	return false
 }
 
-func (g *keywordGroup) matches(word []byte) bool {
+func (g *keywordGroup) matches(word string) bool {
 	if len(word) == 0 {
 		return false
 	}
-	wordString := string(word)
 	for _, v := range *g {
-		if strings.EqualFold(wordString, v) {
+		if strings.EqualFold(word, v) {
 			return true
 		}
 	}
@@ -93,14 +92,14 @@ func (g *keywordGroup) matches(word []byte) bool {
 }
 
 func (g *keywordGroup) matchesInstruction(i *item) bool {
-	return i.typ == itemInstruction && g.matches([]byte(i.val))
+	return i.typ == itemInstruction && g.matches(i.val)
 }
 
 // item represents a token or text string returned from the scanner.
 type item struct {
 	typ    itemType // The type of this item
 	val    string   // Name of the instruction, label, or symbol. Limited to ASCII characters.
-	params [][]byte // Instruction parameters
+	params []string // Instruction parameters
 }
 
 // itemType identifies the type of lex items.
@@ -130,8 +129,7 @@ type lexFn struct {
 }
 
 func (l *lexer) lexINCLUDE(i *item) {
-	filename := string(i.params[0])
-	newL := lexFile(filename, l.paths)
+	newL := lexFile(i.params[0], l.paths)
 	for i := range newL.items {
 		l.items <- i
 	}
@@ -151,11 +149,11 @@ func lexFirst(l *lexer) stateFn {
 	// surrounded by spaces, and nextUntil() isn't designed to handle that.)
 	if l.stream.peek() == '=' {
 		l.emitWord(itemSymbol, first)
-		l.newInstruction([]byte{l.stream.next()})
+		l.newInstruction(string(l.stream.next()))
 	} else if second := l.stream.peekUntil(&wordDelim); !instructions.matches(first) && declarators.matches(second) {
 		l.emitWord(itemSymbol, first)
 		l.newInstruction(l.stream.nextUntil(&wordDelim))
-	} else if strings.EqualFold(string(first), "comment") {
+	} else if strings.EqualFold(first, "comment") {
 		l.stream.ignore(&whitespace)
 		delim := charGroup{l.stream.next()}
 		l.stream.nextUntil(&delim)
@@ -186,29 +184,29 @@ func lexParam(l *lexer) stateFn {
 }
 
 // emitInstruction emits the currently cached instruction.
-func (l *lexer) newInstruction(val []byte) {
+func (l *lexer) newInstruction(val string) {
 	// Nope, turning this global would result in an initialization loop.
 	var lexFns = map[string]lexFn{
 		"INCLUDE": {(*lexer).lexINCLUDE, 1},
 	}
 
 	l.curInst.typ = itemInstruction
-	lexFunc, ok := lexFns[strings.ToUpper(string(l.curInst.val))]
+	lexFunc, ok := lexFns[strings.ToUpper(l.curInst.val)]
 	if ok && l.curInst.checkMinParams(lexFunc.minParams) {
 		lexFunc.f(l, &l.curInst)
 	} else if len(l.curInst.val) != 0 {
 		l.items <- l.curInst
 	}
-	l.curInst.val = string(val)
+	l.curInst.val = val
 	l.curInst.params = nil
 }
 
 // emitWord emits the currently cached instruction, followed by the given word
 // as the given item type.
-func (l *lexer) emitWord(t itemType, word []byte) {
-	l.newInstruction(nil)
+func (l *lexer) emitWord(t itemType, word string) {
+	l.newInstruction("")
 	if len(word) > 0 {
-		l.items <- item{t, string(word), nil}
+		l.items <- item{t, word, nil}
 	}
 }
 
@@ -217,19 +215,19 @@ func (l *lexer) run() {
 	for state := lexFirst; state != nil; {
 		state = state(l)
 	}
-	l.newInstruction(nil) // send the currently cached instruction
+	l.newInstruction("") // send the currently cached instruction
 	close(l.items)
 }
 
 // readFirstFromPaths reads and returns the contents of a file with name
 // filename from the first directory in the given list that contains such a
 // file, as well as the full path to the file that was read.
-func readFirstFromPaths(filename string, paths []string) ([]byte, string) {
+func readFirstFromPaths(filename string, paths []string) (string, string) {
 	for _, path := range paths {
 		fullname := filepath.Join(path, filename)
 		bytes, err := ioutil.ReadFile(fullname)
 		if err == nil {
-			return bytes, fullname
+			return string(bytes), fullname
 		} else if !os.IsNotExist(err) {
 			log.Fatalln(err)
 		}
@@ -238,7 +236,7 @@ func readFirstFromPaths(filename string, paths []string) ([]byte, string) {
 		"could not find %s in any of the source paths:\n\t%s",
 		filename, strings.Join(paths, "\n\t"),
 	)
-	return nil, ""
+	return "", ""
 }
 
 func lexFile(filename string, paths []string) *lexer {
@@ -268,23 +266,22 @@ func (i *item) checkMinParams(min int) bool {
 }
 
 func (i item) String() string {
-	var format string
+	var ret string
 	switch i.typ {
 	case itemLabel:
-		format = "%s:\n"
+		ret = i.val + ":\n"
 	case itemSymbol:
-		format = "%s"
+		ret = i.val
 	case itemInstruction:
-		format = "\t%s"
+		ret = "\t" + i.val
 	}
-	ret := fmt.Sprintf(format, i.val)
 	for num, param := range i.params {
 		if num == 0 {
 			ret += "\t"
 		} else {
 			ret += ", "
 		}
-		ret += fmt.Sprintf("%s", param)
+		ret += param
 	}
 	if i.typ == itemInstruction {
 		ret += "\n"

@@ -3,7 +3,7 @@ package main
 // lexStream provides methods to iteratively read through a byte stream using
 // delimiter characters.
 type lexStream struct {
-	input []byte
+	input string
 	pos   int
 }
 
@@ -34,7 +34,7 @@ func (s *lexStream) next() byte {
 
 // peekUntil returns but does not consume the next word that is delimited by
 // the given character group.
-func (s *lexStream) peekUntil(delim *charGroup) []byte {
+func (s *lexStream) peekUntil(delim *charGroup) string {
 	pos := s.pos
 	ret := s.nextUntil(delim)
 	s.pos = pos
@@ -42,7 +42,7 @@ func (s *lexStream) peekUntil(delim *charGroup) []byte {
 }
 
 // nextUntil consumes the next word that is delimited by the given character group.
-func (s *lexStream) nextUntil(delim *charGroup) []byte {
+func (s *lexStream) nextUntil(delim *charGroup) string {
 	s.ignore(&whitespace)
 	start := s.pos
 	for !delim.matches(s.peek()) && s.peek() != eof {
@@ -53,7 +53,7 @@ func (s *lexStream) nextUntil(delim *charGroup) []byte {
 
 // nextParam consumes and returns the next parameter to an instruction, taking
 // nesting into account.
-func (s *lexStream) nextParam() []byte {
+func (s *lexStream) nextParam() string {
 	var quote byte
 	level := 0
 
@@ -89,6 +89,6 @@ func (s *lexStream) nextParam() []byte {
 	return s.input[start:s.pos]
 }
 
-func newLexStream(input []byte) *lexStream {
+func newLexStream(input string) *lexStream {
 	return &lexStream{input: input}
 }
