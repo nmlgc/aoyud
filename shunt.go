@@ -138,14 +138,8 @@ var binaryOperators = shuntOpMap{
 // nextShuntToken returns the next operand or operator from s. Only operators
 // in opSet are identified as such.
 func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (shuntVal, error) {
-	token := s.nextUntil(&shuntDelim)
-	if len(token) == 0 {
-		nextChar := string(s.next())
-		if nextOp, ok := (*opSet)[nextChar]; ok {
-			return &nextOp, nil
-		}
-		return nil, fmt.Errorf("unexpected %s in expression", nextChar)
-	} else if isAsmInt(token) {
+	token := s.nextToken(&shuntDelim)
+	if isAsmInt(token) {
 		return newAsmInt(token)
 	}
 	tokenUpper := strings.ToUpper(token)

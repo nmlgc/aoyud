@@ -51,6 +51,16 @@ func (s *lexStream) nextUntil(delim *charGroup) string {
 	return s.input[start:s.pos]
 }
 
+// nextToken works like nextUntil, but consumes one additional character if
+// the returned string would have been empty.
+func (s *lexStream) nextToken(delim *charGroup) string {
+	ret := s.nextUntil(delim)
+	if len(ret) == 0 {
+		ret = string(s.next())
+	}
+	return ret
+}
+
 // nextParam consumes and returns the next parameter to an instruction, taking
 // nesting into account.
 func (s *lexStream) nextParam() string {
