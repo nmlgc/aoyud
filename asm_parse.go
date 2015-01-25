@@ -356,7 +356,11 @@ func (p *parser) evalIf(match bool) bool {
 	return false
 }
 
-func (p *parser) evalElseif(match bool) bool {
+func (p *parser) evalElseif(directive string, match bool) bool {
+	if p.ifNest == 0 {
+		log.Println("unmatched", directive)
+		return true
+	}
 	if p.ifMatch == p.ifNest {
 		p.ifMatch--
 	} else if p.ifMatch == (p.ifNest-1) && p.ifNest == p.ifElse && match {
@@ -379,31 +383,19 @@ func (p *parser) parseIF(itemNum int, i *item) bool {
 
 func (p *parser) parseELSEIFDEF(itemNum int, i *item) bool {
 	directive := strings.ToUpper(i.val)
-	if p.ifNest == 0 {
-		log.Println("unmatched", directive)
-		return true
-	}
 	_, defined := p.syms[p.toSymCase(i.params[0])]
 	mode := directive == "ELSEIFDEF"
-	return p.evalElseif(defined == mode)
+	return p.evalElseif(directive, defined == mode)
 }
 
 func (p *parser) parseELSEIF(itemNum int, i *item) bool {
 	directive := strings.ToUpper(i.val)
-	if p.ifNest == 0 {
-		log.Println("unmatched", directive)
-		return true
-	}
 	mode := directive == "ELSEIF"
-	return p.evalElseif(p.evalBool(i.params[0]) == mode)
+	return p.evalElseif(directive, p.evalBool(i.params[0]) == mode)
 }
 
 func (p *parser) parseELSE(itemNum int, i *item) bool {
-	if p.ifNest == 0 {
-		log.Println("unmatched ELSE")
-		return true
-	}
-	return p.evalElseif(true)
+	return p.evalElseif("ELSE", true)
 }
 
 func (p *parser) parseENDIF(itemNum int, i *item) bool {
