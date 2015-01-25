@@ -39,7 +39,11 @@ var declarators = keywordGroup{
 // conditionals lists all conditional directives that aren't kept in the parse
 // list.
 var conditionals = keywordGroup{
-	"IFDEF", "IFNDEF", "IF", "IFE", "ELSEIF", "ELSEIFE", "ELSE", "ENDIF",
+	"IFDEF", "IFNDEF", "IF", "IFE", "IFB", "IFNB",
+	"IFIDN", "IFIDNI", "IFDIF", "IFDIFI",
+	"ELSEIFDEF", "ELSEIFNDEF", "ELSEIF", "ELSEIFE", "ELSEIFB", "ELSEIFNB",
+	"ELSEIFIDN", "ELSEIFIDNI", "ELSEIFDIF", "ELSEIFDIFI",
+	"ELSE", "ENDIF",
 }
 
 var macros = keywordGroup{

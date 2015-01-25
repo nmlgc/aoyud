@@ -346,6 +346,67 @@ func (p *parser) parseEQU(itemNum int, i *item) bool {
 	return true
 }
 
+// text evaluates s as a text string used in a conditional directive.
+func (p *parser) text(s string) (string, error) {
+	fail := func() (string, error) {
+		return "", fmt.Errorf("<text string> or %text_macro required")
+	}
+	if s[0] == '<' {
+		s = s[1:]
+		// TASM does not strip whitespace here, JWasm does.
+		if p.syntax == "MASM" {
+			s = strings.TrimSpace(s)
+		}
+		rb := strings.IndexByte(s, '>')
+		if rb == -1 {
+			return fail()
+		} else if rb != len(s)-1 {
+			log.Printf("extra characters on line")
+		}
+		return s[:rb], nil
+	} else if s[0] == '%' {
+		name := strings.TrimSpace(p.toSymCase(s[1:]))
+		sym, err := p.getSym(name)
+		if err != nil {
+			return "", err
+		}
+		switch sym.(type) {
+		case asmInt:
+			return strconv.FormatInt(sym.(asmInt).n, 16), nil
+		case asmString:
+			return string(sym.(asmString)), nil
+		case asmMacro:
+			return "", fmt.Errorf("can't use macro name in expression: %s", name)
+		default:
+			return "", fmt.Errorf("invalid symbol type in expression: %s", sym)
+		}
+	}
+	return fail()
+}
+
+func (p *parser) isBlank(s string) (bool, error) {
+	ret, err := p.text(s)
+	return len(ret) == 0, err
+}
+
+func (p *parser) isEqual(s1, s2 string) (bool, error) {
+	ret1, err1 := p.text(s1)
+	ret2, err2 := p.text(s2)
+	if err1 != nil {
+		log.Println(err1)
+	}
+	return ret1 == ret2, err2
+}
+
+func (p *parser) isEqualFold(s1, s2 string) (bool, error) {
+	ret1, err1 := p.text(s1)
+	ret2, err2 := p.text(s2)
+	if err1 != nil {
+		log.Println(err1)
+	}
+	return strings.EqualFold(ret1, ret2), err2
+}
+
 func (p *parser) evalIf(match bool) bool {
 	if match && p.ifMatch == p.ifNest {
 		p.ifMatch++
@@ -370,6 +431,20 @@ func (p *parser) evalElseif(directive string, match bool) bool {
 	return false
 }
 
+type ifidnMode struct {
+	compareFn func(*parser, string, string) (bool, error)
+	identical bool
+}
+
+// ifidnModeMap abstracts away the differences between IFIDN(I) and IFDIF(I),
+// so that all four can be implemented in a single function.
+var ifidnModeMap = map[string]ifidnMode{
+	"IFIDN":  {compareFn: (*parser).isEqual, identical: true},
+	"IFIDNI": {compareFn: (*parser).isEqualFold, identical: true},
+	"IFDIF":  {compareFn: (*parser).isEqual, identical: false},
+	"IFDIFI": {compareFn: (*parser).isEqualFold, identical: false},
+}
+
 func (p *parser) parseIFDEF(itemNum int, i *item) bool {
 	_, defined := p.syms[p.toSymCase(i.params[0])]
 	mode := strings.ToUpper(i.val) == "IFDEF"
@@ -379,6 +454,27 @@ func (p *parser) parseIFDEF(itemNum int, i *item) bool {
 func (p *parser) parseIF(itemNum int, i *item) bool {
 	mode := strings.ToUpper(i.val) == "IF"
 	return p.evalIf(p.evalBool(i.params[0]) == mode)
+}
+
+func (p *parser) parseIFB(itemNum int, i *item) bool {
+	mode := strings.ToUpper(i.val) == "IFB"
+	ret, err := p.isBlank(i.params[0])
+	if err != nil {
+		log.Println(err)
+		return true
+	}
+	return p.evalIf(ret == mode)
+}
+
+func (p *parser) parseIFIDN(itemNum int, i *item) bool {
+	directive := strings.ToUpper(i.val)
+	mode := ifidnModeMap[directive]
+	ret, err := mode.compareFn(p, i.params[0], i.params[1])
+	if err != nil {
+		log.Println(err)
+		return true
+	}
+	return p.evalIf(ret == mode.identical)
 }
 
 func (p *parser) parseELSEIFDEF(itemNum int, i *item) bool {
@@ -392,6 +488,28 @@ func (p *parser) parseELSEIF(itemNum int, i *item) bool {
 	directive := strings.ToUpper(i.val)
 	mode := directive == "ELSEIF"
 	return p.evalElseif(directive, p.evalBool(i.params[0]) == mode)
+}
+
+func (p *parser) parseELSEIFB(itemNum int, i *item) bool {
+	ret, err := p.isBlank(i.params[0])
+	if err != nil {
+		log.Println(err)
+		return true
+	}
+	directive := strings.ToUpper(i.val)
+	mode := directive == "ELSEIFB"
+	return p.evalElseif(directive, ret == mode)
+}
+
+func (p *parser) parseELSEIFIDN(itemNum int, i *item) bool {
+	directive := strings.ToUpper(i.val)
+	mode := ifidnModeMap[directive[4:]]
+	ret, err := mode.compareFn(p, i.params[0], i.params[1])
+	if err != nil {
+		log.Println(err)
+		return true
+	}
+	return p.evalElseif(directive, ret == mode.identical)
 }
 
 func (p *parser) parseELSE(itemNum int, i *item) bool {
@@ -475,10 +593,22 @@ var parseFns = map[string]parseFn{
 	"IFNDEF":     {(*parser).parseIFDEF, 1},
 	"IF":         {(*parser).parseIF, 1},
 	"IFE":        {(*parser).parseIF, 1},
+	"IFB":        {(*parser).parseIFB, 1},
+	"IFNB":       {(*parser).parseIFB, 1},
+	"IFIDN":      {(*parser).parseIFIDN, 2},
+	"IFIDNI":     {(*parser).parseIFIDN, 2},
+	"IFDIF":      {(*parser).parseIFIDN, 2},
+	"IFDIFI":     {(*parser).parseIFIDN, 2},
 	"ELSEIFDEF":  {(*parser).parseELSEIFDEF, 1},
 	"ELSEIFNDEF": {(*parser).parseELSEIFDEF, 1},
 	"ELSEIF":     {(*parser).parseELSEIF, 1},
 	"ELSEIFE":    {(*parser).parseELSEIF, 1},
+	"ELSEIFB":    {(*parser).parseELSEIFB, 1},
+	"ELSEIFNB":   {(*parser).parseELSEIFB, 1},
+	"ELSEIFIDN":  {(*parser).parseELSEIFIDN, 2},
+	"ELSEIFIDNI": {(*parser).parseELSEIFIDN, 2},
+	"ELSEIFDIF":  {(*parser).parseELSEIFIDN, 2},
+	"ELSEIFDIFI": {(*parser).parseELSEIFIDN, 2},
 	"ELSE":       {(*parser).parseELSE, 0},
 	"ENDIF":      {(*parser).parseENDIF, 0},
 	"OPTION":     {(*parser).parseOPTION, 1},
