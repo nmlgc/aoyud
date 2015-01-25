@@ -129,6 +129,8 @@ type lexFn struct {
 }
 
 func (l *lexer) lexINCLUDE(i *item) {
+	// Remember to restore the old filename once we're done with this one
+	defer log.SetPrefix(log.Prefix())
 	newL := lexFile(i.params[0], l.paths)
 	for i := range newL.items {
 		l.items <- i
