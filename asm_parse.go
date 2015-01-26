@@ -105,8 +105,9 @@ func (v asmMacroArg) String() string {
 }
 
 type asmMacro struct {
-	args []asmMacroArg
-	code []item
+	args   []asmMacroArg
+	code   []item
+	locals []string
 }
 
 func (v asmMacro) String() string {
@@ -119,6 +120,9 @@ func (v asmMacro) String() string {
 		}
 		ret += arg.String()
 	}
+	if len(v.locals) != 0 {
+		ret += "\n\tLOCAL\t" + strings.Join(v.locals, ", ")
+	}
 	ret += "\n"
 	for _, ins := range v.code {
 		ret += ins.String()
@@ -128,10 +132,10 @@ func (v asmMacro) String() string {
 
 // newMacro creates a new multiline macro ending at itemNum.
 func (p *parser) newMacro(itemNum int) (asmMacro, error) {
-	start := p.instructions[p.macro.start]
-	args := make([]asmMacroArg, len(start.params))
-	for i := range start.params {
-		nameOrg, typOrg := splitColon(start.params[i])
+	header := p.instructions[p.macro.start]
+	args := make([]asmMacroArg, len(header.params))
+	for i := range header.params {
+		nameOrg, typOrg := splitColon(header.params[i])
 		args[i].name = p.toSymCase(nameOrg)
 		args[i].typ = strings.ToUpper(typOrg)
 		// Verify types
@@ -141,7 +145,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, error) {
 			break
 		case "REST":
 		case "VARARG":
-			if i != len(start.params)-1 {
+			if i != len(header.params)-1 {
 				// TASM would actually accept this, but we better
 				// complain since it doesn't make sense at all.
 				return asmMacro{}, fmt.Errorf(
@@ -161,10 +165,28 @@ func (p *parser) newMacro(itemNum int) (asmMacro, error) {
 			}
 		}
 	}
-	return asmMacro{
-		code: p.instructions[p.macro.start+1 : itemNum],
-		args: args,
-	}, nil
+	var locals []string
+	localsAllowed := true
+	code := p.instructions[p.macro.start+1 : itemNum]
+	for i := 0; i < len(code); i++ {
+		if strings.EqualFold(code[i].val, "LOCAL") {
+			if localsAllowed {
+				for _, param := range code[i].params {
+					locals = append(locals, p.toSymCase(param))
+				}
+				code = code[i+1:]
+				i--
+			} else {
+				log.Printf(
+					"LOCAL directives must come first in a macro body, ignoring: %s",
+					strings.Join(code[i].params, ", "),
+				)
+			}
+		} else {
+			localsAllowed = false
+		}
+	}
+	return asmMacro{args, code, locals}, nil
 }
 
 // newAsmVal returns the correct type of assembly value for input.
