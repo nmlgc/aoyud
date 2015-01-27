@@ -232,9 +232,9 @@ type parser struct {
 	proc  nestableBlock
 	macro nestableBlock
 	// Conditionals
-	ifNest  int // IF nesting level
-	ifMatch int // Last IF nesting level that evaluated to true
-	ifElse  int // Last IF nesting level that may have an ELSE* block
+	ifNest  int  // IF nesting level
+	ifMatch int  // Last IF nesting level that evaluated to true
+	ifElse  bool // Can the current level still have an ELSE* block?
 }
 
 func (p *parser) toSymCase(s string) string {
@@ -434,12 +434,12 @@ func (p *parser) isEqualFold(s1, s2 string) (bool, error) {
 }
 
 func (p *parser) evalIf(match bool) bool {
-	if match && p.ifMatch == p.ifNest {
+	valid := match && p.ifMatch == p.ifNest
+	if valid {
 		p.ifMatch++
-	} else {
-		p.ifElse++
 	}
 	p.ifNest++
+	p.ifElse = !valid
 	return false
 }
 
@@ -450,9 +450,9 @@ func (p *parser) evalElseif(directive string, match bool) bool {
 	}
 	if p.ifMatch == p.ifNest {
 		p.ifMatch--
-	} else if p.ifMatch == (p.ifNest-1) && p.ifNest == p.ifElse && match {
+	} else if p.ifMatch == (p.ifNest-1) && p.ifElse && match {
 		p.ifMatch++
-		p.ifElse--
+		p.ifElse = false
 	}
 	return false
 }
@@ -549,9 +549,7 @@ func (p *parser) parseENDIF(itemNum int, i *item) bool {
 	}
 	if p.ifMatch == p.ifNest {
 		p.ifMatch--
-	}
-	if p.ifElse == p.ifNest {
-		p.ifElse--
+		p.ifElse = false
 	}
 	p.ifNest--
 	return false
