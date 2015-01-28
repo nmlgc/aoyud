@@ -98,7 +98,7 @@ func (v asmMacroArg) String() string {
 	if v.typ != "" {
 		ret += ":" + v.typ
 		if v.typ == "=" {
-			ret += v.def
+			ret += "<" + v.def + ">"
 		}
 	}
 	return ret
@@ -155,8 +155,12 @@ func (p *parser) newMacro(itemNum int) (asmMacro, error) {
 			}
 		default:
 			if typOrg[0] == '=' {
+				def, err := p.text(strings.TrimSpace(typOrg[1:]))
+				if err != nil {
+					return asmMacro{}, err
+				}
 				args[i].typ = "="
-				args[i].def = strings.TrimSpace(typOrg[1:])
+				args[i].def = def
 			} else {
 				return asmMacro{}, fmt.Errorf(
 					"macro %s: invalid argument type: %s",
@@ -375,7 +379,7 @@ func (p *parser) parseEQU(itemNum int, i *item) bool {
 // text evaluates s as a text string used in a conditional directive.
 func (p *parser) text(s string) (string, error) {
 	fail := func() (string, error) {
-		return "", fmt.Errorf("<text string> or %text_macro required")
+		return "", fmt.Errorf("invalid <text string> or %text_macro: %s", s)
 	}
 	if s[0] == '<' {
 		s = s[1:]
@@ -398,7 +402,7 @@ func (p *parser) text(s string) (string, error) {
 		}
 		switch sym.(type) {
 		case asmInt:
-			return strconv.FormatInt(sym.(asmInt).n, 16), nil
+			return strconv.FormatInt(sym.(asmInt).n, 10), nil
 		case asmString:
 			return string(sym.(asmString)), nil
 		case asmMacro:
