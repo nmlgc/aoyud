@@ -193,6 +193,92 @@ func (p *parser) newMacro(itemNum int) (asmMacro, error) {
 	return asmMacro{args, code, locals}, nil
 }
 
+// expandMacro expands the multiline macro m using the given params and calls
+// p.eval for every line in the macro. Returns false if the expansion was
+// successful, true otherwise.
+func (p *parser) expandMacro(m asmMacro, params []string) bool {
+	replaceMap := make(map[string]string)
+
+	setArg := func(name string, i int) bool {
+		ret := len(params) > i && len(params[i]) > 0
+		if ret {
+			if params[i][0] == '<' || params[i][0] == '%' {
+				text, err := p.text(params[i])
+				if err != nil {
+					log.Println(err)
+					return false
+				}
+				replaceMap[name] = text
+			} else {
+				replaceMap[name] = params[i]
+			}
+		}
+		return ret
+	}
+
+	replace := func(s string) string {
+		ret := ""
+		andCached := false
+		for stream := newLexStream(s); stream.peek() != eof; {
+			// Be sure to copy any whitespace in s.
+			start := stream.pos
+			stream.ignore(&whitespace)
+			ret += s[start:stream.pos]
+
+			token := stream.nextToken(&shuntDelim)
+			if token == "&" {
+				andCached = true
+				token = ""
+			} else if arg, ok := replaceMap[p.toSymCase(token)]; ok {
+				token = arg
+				if stream.peek() == '&' {
+					stream.next()
+				}
+				andCached = false
+			} else if andCached {
+				ret += "&"
+				andCached = false
+			}
+			ret += token
+		}
+		return ret
+	}
+
+	for i, arg := range m.args {
+		replaceMap[arg.name] = arg.def
+		switch arg.typ {
+		case "REST":
+		case "VARARG":
+			replaceMap[arg.name] = strings.Join(params[i:], ", ")
+		case "REQ":
+			if !setArg(arg.name, i) {
+				log.Printf("macro argument #%d (%s) is required", i, arg.name)
+				return true
+			}
+		default:
+			setArg(arg.name, i)
+		}
+	}
+	for _, local := range m.locals {
+		// Who knows, some code might actually rely on the resulting
+		// labels being named exactly like this.
+		replaceMap[local] = fmt.Sprintf("??%04X", p.macroLocalCount)
+		p.macroLocalCount++
+	}
+	for i := range m.code {
+		expanded := item{
+			typ:    m.code[i].typ,
+			val:    replace(m.code[i].val),
+			params: make([]string, len(m.code[i].params)),
+		}
+		for p := range m.code[i].params {
+			expanded.params[p] = replace(m.code[i].params[p])
+		}
+		p.eval(&expanded)
+	}
+	return false
+}
+
 // newAsmVal returns the correct type of assembly value for input.
 func (p *parser) newAsmVal(input string) asmVal {
 	if newval, err := p.shunt(input); err == nil {
@@ -228,10 +314,11 @@ type nestableBlock struct {
 type parser struct {
 	instructions []item
 	// General state
-	syntax  string
-	syms    symMap
-	symCase bool   // case sensitivity for symbols
-	symLast string // last symbol declaration encountered
+	syntax          string
+	syms            symMap
+	symCase         bool   // case sensitivity for symbols
+	symLast         string // last symbol declaration encountered
+	macroLocalCount int    // Number of LOCAL directives expanded
 	// Open blocks
 	proc  nestableBlock
 	macro nestableBlock
@@ -673,29 +760,37 @@ func (p *parser) setSym(name string, val asmVal, constant bool) bool {
 	return true
 }
 
-func (p *parser) eval(i *item) bool {
+// eval evaluates the given item, updates the parse state accordingly, and
+// keeps i in the parser's instruction list, unless it lies on an ignored
+// conditional branch.
+func (p *parser) eval(i *item) {
 	if p.syms == nil {
 		p.syms = make(symMap)
 	}
-	if conditionals.matchesInstruction(i) || (p.ifMatch >= p.ifNest) {
-		ret := true
-		if macros.matchesInstruction(i) || (p.macro.nest == 0) {
-			switch i.typ {
-			case itemSymbol:
-				p.symLast = i.val
-			case itemInstruction:
-				insFunc, ok := parseFns[strings.ToUpper(i.val)]
-				if ok && i.checkMinParams(insFunc.minParams) {
+	if !(conditionals.matchesInstruction(i) || (p.ifMatch >= p.ifNest)) {
+		return
+	}
+	ret := true
+	if macros.matchesInstruction(i) || (p.macro.nest == 0) {
+		switch i.typ {
+		case itemSymbol:
+			p.symLast = i.val
+		case itemInstruction:
+			if insFunc, ok := parseFns[strings.ToUpper(i.val)]; ok {
+				if i.checkMinParams(insFunc.minParams) {
 					ret = insFunc.f(p, len(p.instructions), i)
+				}
+			} else if insSym, ok := p.getSym(i.val); ok == nil {
+				switch insSym.(type) {
+				case asmMacro:
+					ret = p.expandMacro(insSym.(asmMacro), i.params)
 				}
 			}
 		}
-		if ret {
-			p.instructions = append(p.instructions, *i)
-		}
-		return ret
 	}
-	return false
+	if ret {
+		p.instructions = append(p.instructions, *i)
+	}
 }
 
 func (p *parser) end() {
