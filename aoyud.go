@@ -104,7 +104,8 @@ func (g *keywordGroup) matchesInstruction(i *item) bool {
 // item represents a token or text string returned from the scanner.
 type item struct {
 	typ    itemType // The type of this item
-	val    string   // Name of the instruction, label, or symbol. Limited to ASCII characters.
+	sym    string   // Optional symbol name
+	val    string   // Name of the instruction or label. Limited to ASCII characters.
 	params []string // Instruction parameters
 }
 
@@ -114,7 +115,6 @@ type itemType int
 const (
 	itemError       itemType = iota // error occurred; value is text of error
 	itemLabel                       // jump target
-	itemSymbol                      // symbol declaration
 	itemInstruction                 // instruction or directive and its parameters
 )
 
@@ -150,17 +150,15 @@ func lexFirst(l *lexer) stateFn {
 	// Label?
 	if l.stream.peek() == ':' {
 		l.stream.next()
-		l.emitWord(itemLabel, first)
+		l.emitItem(item{typ: itemLabel, sym: first})
 		return lexFirst
 	}
 	// Assignment? (Needs to be a special case because = doesn't need to be
 	// surrounded by spaces, and nextUntil() isn't designed to handle that.)
 	if l.stream.peek() == '=' {
-		l.emitWord(itemSymbol, first)
-		l.newInstruction(string(l.stream.next()))
+		l.newInstruction(first, string(l.stream.next()))
 	} else if second := l.stream.peekUntil(&wordDelim); !instructions.matches(first) && declarators.matches(second) {
-		l.emitWord(itemSymbol, first)
-		l.newInstruction(l.stream.nextUntil(&wordDelim))
+		l.newInstruction(first, l.stream.nextUntil(&wordDelim))
 	} else if strings.EqualFold(first, "comment") {
 		l.stream.ignore(&whitespace)
 		delim := charGroup{l.stream.next()}
@@ -168,7 +166,7 @@ func lexFirst(l *lexer) stateFn {
 		l.stream.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
 		return lexFirst
 	} else {
-		l.newInstruction(first)
+		l.newInstruction("", first)
 	}
 	return lexParam
 }
@@ -192,7 +190,7 @@ func lexParam(l *lexer) stateFn {
 }
 
 // emitInstruction emits the currently cached instruction.
-func (l *lexer) newInstruction(val string) {
+func (l *lexer) newInstruction(sym, val string) {
 	// Nope, turning this global would result in an initialization loop.
 	var lexFns = map[string]lexFn{
 		"INCLUDE": {(*lexer).lexINCLUDE, 1},
@@ -202,19 +200,19 @@ func (l *lexer) newInstruction(val string) {
 	lexFunc, ok := lexFns[strings.ToUpper(l.curInst.val)]
 	if ok && l.curInst.checkMinParams(lexFunc.minParams) {
 		lexFunc.f(l, &l.curInst)
-	} else if len(l.curInst.val) != 0 {
+	} else if len(l.curInst.val) > 0 {
 		l.items <- l.curInst
 	}
+	l.curInst.sym = sym
 	l.curInst.val = val
 	l.curInst.params = nil
 }
 
-// emitWord emits the currently cached instruction, followed by the given word
-// as the given item type.
-func (l *lexer) emitWord(t itemType, word string) {
-	l.newInstruction("")
-	if len(word) > 0 {
-		l.items <- item{t, word, nil}
+// emitItem emits the currently cached instruction, followed by the given item.
+func (l *lexer) emitItem(i item) {
+	l.newInstruction("", "")
+	if len(i.val) > 0 || len(i.sym) > 0 {
+		l.items <- i
 	}
 }
 
@@ -223,7 +221,7 @@ func (l *lexer) run() {
 	for state := lexFirst; state != nil; {
 		state = state(l)
 	}
-	l.newInstruction("") // send the currently cached instruction
+	l.newInstruction("", "") // send the currently cached instruction
 	close(l.items)
 }
 
@@ -277,19 +275,15 @@ func (i item) String() string {
 	var ret string
 	switch i.typ {
 	case itemLabel:
-		ret = i.val + ":\n"
-	case itemSymbol:
-		ret = i.val
+		ret = i.sym + ":\n"
 	case itemInstruction:
-		ret = "\t" + i.val
-	}
-	for num, param := range i.params {
-		if num == 0 {
-			ret += "\t"
-		} else {
-			ret += ", "
+		if i.sym != "" {
+			ret = i.sym
 		}
-		ret += param
+		ret += "\t" + i.val
+	}
+	if len(i.params) > 0 {
+		ret += "\t" + strings.Join(i.params, ", ")
 	}
 	if i.typ == itemInstruction {
 		ret += "\n"

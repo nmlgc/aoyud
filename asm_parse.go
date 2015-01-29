@@ -268,6 +268,7 @@ func (p *parser) expandMacro(m asmMacro, params []string) bool {
 	for i := range m.code {
 		expanded := item{
 			typ:    m.code[i].typ,
+			sym:    replace(m.code[i].sym),
 			val:    replace(m.code[i].val),
 			params: make([]string, len(m.code[i].params)),
 		}
@@ -316,9 +317,8 @@ type parser struct {
 	// General state
 	syntax          string
 	syms            symMap
-	symCase         bool   // case sensitivity for symbols
-	symLast         string // last symbol declaration encountered
-	macroLocalCount int    // Number of LOCAL directives expanded
+	symCase         bool // case sensitivity for symbols
+	macroLocalCount int  // Number of LOCAL directives expanded
 	// Open blocks
 	proc  nestableBlock
 	macro nestableBlock
@@ -355,10 +355,10 @@ type parseFn struct {
 
 func (p *parser) parsePROC(itemNum int, i *item) bool {
 	if p.proc.nest == 0 {
-		p.proc.name = p.symLast
+		p.proc.name = i.sym
 		p.proc.start = itemNum
 	} else {
-		log.Printf("ignoring nested procedure %s\n", p.symLast)
+		log.Printf("ignoring nested procedure %s\n", i.sym)
 	}
 	p.proc.nest++
 	return true
@@ -366,7 +366,7 @@ func (p *parser) parsePROC(itemNum int, i *item) bool {
 
 func (p *parser) parseENDP(itemNum int, i *item) bool {
 	if p.proc.nest == 0 {
-		log.Printf("ignoring procedure %s without a PROC directive\n", p.symLast)
+		log.Printf("ignoring procedure %s without a PROC directive\n", i.sym)
 	} else if p.proc.nest == 1 {
 		log.Printf(
 			"found procedure %s ranging from lex items #%d-#%d\n",
@@ -459,7 +459,7 @@ func (p *parser) parseMODEL(itemNum int, i *item) bool {
 }
 
 func (p *parser) parseEQU(itemNum int, i *item) bool {
-	p.setSym(p.symLast, p.newAsmVal(i.params[0]), i.val[0] != '=')
+	p.setSym(i.sym, p.newAsmVal(i.params[0]), i.val[0] != '=')
 	return true
 }
 
@@ -671,7 +671,7 @@ func (p *parser) parseOPTION(itemNum int, i *item) bool {
 
 func (p *parser) parseMACRO(itemNum int, i *item) bool {
 	if p.macro.nest == 0 {
-		p.macro.name = p.symLast
+		p.macro.name = i.sym
 		p.macro.start = itemNum
 	}
 	p.macro.nest++
@@ -771,20 +771,15 @@ func (p *parser) eval(i *item) {
 		return
 	}
 	ret := true
-	if macros.matchesInstruction(i) || (p.macro.nest == 0) {
-		switch i.typ {
-		case itemSymbol:
-			p.symLast = i.val
-		case itemInstruction:
-			if insFunc, ok := parseFns[strings.ToUpper(i.val)]; ok {
-				if i.checkMinParams(insFunc.minParams) {
-					ret = insFunc.f(p, len(p.instructions), i)
-				}
-			} else if insSym, ok := p.getSym(i.val); ok == nil {
-				switch insSym.(type) {
-				case asmMacro:
-					ret = p.expandMacro(insSym.(asmMacro), i.params)
-				}
+	if i.typ == itemInstruction && (macros.matchesInstruction(i) || (p.macro.nest == 0)) {
+		if insFunc, ok := parseFns[strings.ToUpper(i.val)]; ok {
+			if i.checkMinParams(insFunc.minParams) {
+				ret = insFunc.f(p, len(p.instructions), i)
+			}
+		} else if insSym, ok := p.getSym(i.val); ok == nil {
+			switch insSym.(type) {
+			case asmMacro:
+				ret = p.expandMacro(insSym.(asmMacro), i.params)
 			}
 		}
 	}
