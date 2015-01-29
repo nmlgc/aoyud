@@ -282,12 +282,12 @@ func (p *parser) expandMacro(m asmMacro, params []string) bool {
 
 // newAsmVal returns the correct type of assembly value for input.
 func (p *parser) newAsmVal(input string) asmVal {
-	if newval, err := p.shunt(input); err == nil {
-		return newval
-	} else {
-		log.Println(err)
-		return asmString(input)
+	if rpnStack := p.shunt(input); rpnStack != nil {
+		if ret := rpnStack.solve(); ret != nil {
+			return *ret
+		}
 	}
+	return asmString(input)
 }
 
 type symbol struct {

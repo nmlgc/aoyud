@@ -38,11 +38,11 @@ const (
 )
 
 type shuntVal interface {
-	calc(valStack *shuntStack) shuntVal
+	calc(retStack *shuntStack) shuntVal
 	fmt.Stringer
 }
 
-func (v asmInt) calc(valStack *shuntStack) shuntVal {
+func (v asmInt) calc(retStack *shuntStack) shuntVal {
 	return v
 }
 
@@ -55,10 +55,10 @@ type shuntOp struct {
 	function func(a, b *asmInt)
 }
 
-func (op *shuntOp) calc(valStack *shuntStack) shuntVal {
+func (op *shuntOp) calc(retStack *shuntStack) shuntVal {
 	var args [2]asmInt
 	for i := 0; i < op.args; i++ {
-		arg := valStack.pop()
+		arg := retStack.pop()
 		if arg == nil {
 			return arg
 		}
@@ -150,12 +150,12 @@ func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (asmVal, error)
 // pushOp evaluates newOp, a newly incoming operator, in relation to the
 // previous operators on top of opStack, and returns the next set of allowed
 // operators.
-func (valStack *shuntStack) pushOp(opStack *shuntStack, newOp *shuntOp) *shuntOpMap {
+func (retStack *shuntStack) pushOp(opStack *shuntStack, newOp *shuntOp) *shuntOpMap {
 	switch newOp.id {
 	case opParenR:
 		top := opStack.pop()
 		for top != nil && top.(*shuntOp).id != opParenL {
-			valStack.push(top.calc(valStack))
+			retStack.push(top)
 			top = opStack.pop()
 		}
 		if top == nil {
@@ -170,8 +170,7 @@ func (valStack *shuntStack) pushOp(opStack *shuntStack, newOp *shuntOp) *shuntOp
 			if op.id == opParenL || newOp.precedence <= op.precedence {
 				break
 			}
-			opStack.pop()
-			valStack.push(top.calc(valStack))
+			retStack.push(opStack.pop())
 		}
 		opStack.push(newOp)
 	}
@@ -179,7 +178,7 @@ func (valStack *shuntStack) pushOp(opStack *shuntStack, newOp *shuntOp) *shuntOp
 }
 
 type shuntState struct {
-	valStack shuntStack
+	retStack shuntStack
 	opStack  shuntStack
 	opSet    *shuntOpMap
 }
@@ -195,10 +194,10 @@ func (p *parser) shuntLoop(s *shuntState, expr string) error {
 		}
 		switch token.(type) {
 		case asmInt:
-			s.valStack.push(token.(asmInt))
+			s.retStack.push(token.(asmInt))
 			s.opSet = &binaryOperators
 		case *shuntOp:
-			s.opSet = s.valStack.pushOp(&s.opStack, token.(*shuntOp))
+			s.opSet = s.retStack.pushOp(&s.opStack, token.(*shuntOp))
 		case asmString:
 			err = p.shuntLoop(s, string(token.(asmString)))
 		default:
@@ -209,34 +208,45 @@ func (p *parser) shuntLoop(s *shuntState, expr string) error {
 	return err
 }
 
-// shunt performs the arithmetic expression in expr and returns the result.
-func (p *parser) shunt(expr string) (asmInt, error) {
+// shunt converts the arithmetic expression in expr into an RPN stack.
+func (p *parser) shunt(expr string) *shuntStack {
 	s := &shuntState{opSet: &unaryOperators}
 	if err := p.shuntLoop(s, expr); err != nil {
-		return asmInt{}, err
+		log.Println(err)
+		return nil
 	}
 	for top := s.opStack.peek(); top != nil; top = s.opStack.peek() {
 		s.opStack.pop()
 		if top.(*shuntOp).id == opParenL {
 			log.Printf("missing a right parenthesis\n")
 		} else {
-			s.valStack.push(top.calc(&s.valStack))
+			s.retStack.push(top)
 		}
 	}
-	if len(s.valStack) != 1 {
-		return asmInt{}, fmt.Errorf("invalid arithmetic expression: %s", expr)
-	}
-	return s.valStack[0].(asmInt), nil
+	return &s.retStack
 }
 
-// evalBool wraps shunt, displays its error message, and casts its result to a
-// bool.
-func (p *parser) evalBool(expr string) bool {
-	ret, err := p.shunt(expr)
-	// Default to false in the case of an error... for now, at least.
-	if err != nil {
-		log.Println(err)
-		return false
+// solve evaluates the RPN stack s and returns the result.
+func (s shuntStack) solve() *asmInt {
+	retStack := make(shuntStack, 0, cap(s))
+	for _, val := range s {
+		retStack.push(val.calc(&retStack))
 	}
-	return ret.n != 0
+	if len(retStack) != 1 {
+		log.Println("invalid RPN expression:", s)
+		return nil
+	}
+	result := retStack[0].(asmInt)
+	return &result
+}
+
+// evalBool wraps shunt and solve, and casts the result to a bool.
+func (p *parser) evalBool(expr string) bool {
+	if rpnStack := p.shunt(expr); rpnStack != nil {
+		if ret := rpnStack.solve(); ret != nil {
+			return ret.n != 0
+		}
+	}
+	// Default to false in the case of an error... for now, at least.
+	return false
 }
