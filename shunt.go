@@ -37,7 +37,15 @@ const (
 	opParenR = ")"
 )
 
-type shuntVal asmVal
+type shuntVal interface {
+	calc(valStack *shuntStack) shuntVal
+	fmt.Stringer
+}
+
+func (v asmInt) calc(valStack *shuntStack) shuntVal {
+	return v
+}
+
 type shuntOp struct {
 	id         shuntOpID
 	precedence int
@@ -47,48 +55,38 @@ type shuntOp struct {
 	function func(a, b *asmInt)
 }
 
-func (s *shuntOp) String() string {
-	return string(s.id)
+func (op *shuntOp) calc(valStack *shuntStack) shuntVal {
+	var args [2]asmInt
+	for i := 0; i < op.args; i++ {
+		arg := valStack.pop()
+		if arg == nil {
+			return arg
+		}
+		args[1-i] = arg.(asmInt)
+	}
+	op.function(&args[0], &args[1])
+	return args[0]
+}
+
+func (op *shuntOp) String() string {
+	return string(op.id)
 }
 
 type shuntOpMap map[string]shuntOp
-type shuntOpStack []*shuntOp
-type shuntValStack []asmInt
+type shuntStack []shuntVal
 
-// "Just don't bother with making this generic," they said.
-// "That's slow and error-prone and not type-safe at all," they said.
-func (stack *shuntOpStack) push(element *shuntOp) {
+func (stack *shuntStack) push(element shuntVal) {
 	*stack = append(*stack, element)
 }
 
-func (stack *shuntOpStack) peek() *shuntOp {
+func (stack *shuntStack) peek() shuntVal {
 	if length := len(*stack); length != 0 {
 		return (*stack)[length-1]
 	}
 	return nil
 }
 
-func (stack *shuntOpStack) pop() *shuntOp {
-	if ret := stack.peek(); ret != nil {
-		*stack = (*stack)[:len(*stack)-1]
-		return ret
-	}
-	log.Println("arithmetic stack underflow")
-	return nil
-}
-
-func (stack *shuntValStack) push(element asmInt) {
-	*stack = append(*stack, element)
-}
-
-func (stack *shuntValStack) peek() *asmInt {
-	if length := len(*stack); length != 0 {
-		return &(*stack)[length-1]
-	}
-	return nil
-}
-
-func (stack *shuntValStack) pop() *asmInt {
+func (stack *shuntStack) pop() shuntVal {
 	if ret := stack.peek(); ret != nil {
 		*stack = (*stack)[:len(*stack)-1]
 		return ret
@@ -137,7 +135,7 @@ var binaryOperators = shuntOpMap{
 
 // nextShuntToken returns the next operand or operator from s. Only operators
 // in opSet are identified as such.
-func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (shuntVal, error) {
+func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (asmVal, error) {
 	token := s.nextToken(&shuntDelim)
 	if isAsmInt(token) {
 		return newAsmInt(token)
@@ -149,30 +147,15 @@ func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (shuntVal, erro
 	return p.getSym(p.toSymCase(token))
 }
 
-// perform applies the function of the given operator on the top of valStack.
-func (valStack *shuntValStack) performOp(op *shuntOp) bool {
-	var args [2]asmInt
-	for i := 0; i < op.args; i++ {
-		arg := valStack.pop()
-		if arg == nil {
-			return false
-		}
-		args[1-i] = *arg
-	}
-	op.function(&args[0], &args[1])
-	valStack.push(args[0])
-	return true
-}
-
-// evalOp evaluates newOp, a newly incoming operator, in relation to the
+// pushOp evaluates newOp, a newly incoming operator, in relation to the
 // previous operators on top of opStack, and returns the next set of allowed
 // operators.
-func (valStack *shuntValStack) evalOp(opStack *shuntOpStack, newOp *shuntOp) *shuntOpMap {
+func (valStack *shuntStack) pushOp(opStack *shuntStack, newOp *shuntOp) *shuntOpMap {
 	switch newOp.id {
 	case opParenR:
 		top := opStack.pop()
-		for top != nil && top.id != opParenL {
-			valStack.performOp(top)
+		for top != nil && top.(*shuntOp).id != opParenL {
+			valStack.push(top.calc(valStack))
 			top = opStack.pop()
 		}
 		if top == nil {
@@ -182,11 +165,13 @@ func (valStack *shuntValStack) evalOp(opStack *shuntOpStack, newOp *shuntOp) *sh
 	case opParenL:
 		opStack.push(newOp)
 	default:
-		top := opStack.peek()
-		for top != nil && top.id != opParenL && newOp.precedence <= top.precedence {
+		for top := opStack.peek(); top != nil; top = opStack.peek() {
+			op := top.(*shuntOp)
+			if op.id == opParenL || newOp.precedence <= op.precedence {
+				break
+			}
 			opStack.pop()
-			valStack.performOp(top)
-			top = opStack.peek()
+			valStack.push(top.calc(valStack))
 		}
 		opStack.push(newOp)
 	}
@@ -194,14 +179,14 @@ func (valStack *shuntValStack) evalOp(opStack *shuntOpStack, newOp *shuntOp) *sh
 }
 
 type shuntState struct {
-	valStack shuntValStack
-	opStack  shuntOpStack
+	valStack shuntStack
+	opStack  shuntStack
 	opSet    *shuntOpMap
 }
 
 func (p *parser) shuntLoop(s *shuntState, expr string) error {
 	var err error = nil
-	var token shuntVal
+	var token asmVal
 	stream := newLexStream(expr)
 	for stream.peek() != eof && err == nil {
 		token, err = p.nextShuntToken(stream, s.opSet)
@@ -213,7 +198,7 @@ func (p *parser) shuntLoop(s *shuntState, expr string) error {
 			s.valStack.push(token.(asmInt))
 			s.opSet = &binaryOperators
 		case *shuntOp:
-			s.opSet = s.valStack.evalOp(&s.opStack, token.(*shuntOp))
+			s.opSet = s.valStack.pushOp(&s.opStack, token.(*shuntOp))
 		case asmString:
 			err = p.shuntLoop(s, string(token.(asmString)))
 		default:
@@ -232,16 +217,16 @@ func (p *parser) shunt(expr string) (asmInt, error) {
 	}
 	for top := s.opStack.peek(); top != nil; top = s.opStack.peek() {
 		s.opStack.pop()
-		if top.id == opParenL {
+		if top.(*shuntOp).id == opParenL {
 			log.Printf("missing a right parenthesis\n")
 		} else {
-			s.valStack.performOp(top)
+			s.valStack.push(top.calc(&s.valStack))
 		}
 	}
 	if len(s.valStack) != 1 {
 		return asmInt{}, fmt.Errorf("invalid arithmetic expression: %s", expr)
 	}
-	return s.valStack[0], nil
+	return s.valStack[0].(asmInt), nil
 }
 
 // evalBool wraps shunt, displays its error message, and casts its result to a
