@@ -35,6 +35,8 @@ const (
 
 	opParenL = "("
 	opParenR = ")"
+
+	opPtr = "ptr"
 )
 
 type shuntVal interface {
@@ -103,6 +105,16 @@ func b2i(b bool) int64 {
 	return 0
 }
 
+var asmTypes = map[string]asmInt{
+	"BYTE":  {n: 1},
+	"WORD":  {n: 2},
+	"DWORD": {n: 4},
+	"PWORD": {n: 6},
+	"FWORD": {n: 6},
+	"QWORD": {n: 8},
+	"TBYTE": {n: 10},
+}
+
 var unaryOperators = shuntOpMap{
 	"(":   {opParenL, 14, 0, nil},
 	")":   {opParenR, 14, 0, nil},
@@ -112,8 +124,13 @@ var unaryOperators = shuntOpMap{
 }
 
 var binaryOperators = shuntOpMap{
-	"(":   {opParenL, 14, 0, nil},
-	")":   {opParenR, 14, 0, nil},
+	"(": {opParenL, 14, 0, nil},
+	")": {opParenR, 14, 0, nil},
+	"PTR": {opPtr, 11, 2, func(a, b *asmInt) {
+		a.ptr = uint64(a.n)
+		a.n = b.n
+		a.base = b.base
+	}},
 	"*":   {opMul, 7, 2, func(a, b *asmInt) { a.n *= b.n }},
 	"/":   {opDiv, 7, 2, func(a, b *asmInt) { a.n /= b.n }},
 	"MOD": {opMod, 7, 2, func(a, b *asmInt) { a.n %= b.n }},
@@ -141,7 +158,9 @@ func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (asmVal, error)
 		return newAsmInt(token)
 	}
 	tokenUpper := strings.ToUpper(token)
-	if nextOp, ok := (*opSet)[tokenUpper]; ok {
+	if typ, ok := asmTypes[tokenUpper]; ok {
+		return typ, nil
+	} else if nextOp, ok := (*opSet)[tokenUpper]; ok {
 		return &nextOp, nil
 	}
 	return p.getSym(p.toSymCase(token))

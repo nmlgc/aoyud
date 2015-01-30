@@ -14,7 +14,8 @@ type asmVal fmt.Stringer
 
 // asmInt represents an integer that will be output in a defined base.
 type asmInt struct {
-	n    int64
+	n    int64  // The value itself
+	ptr  uint64 // Nonzero values turn the integer into a pointer of this length
 	base int
 }
 
@@ -37,6 +38,9 @@ func (v asmInt) String() string {
 			ret = ret[:start] + "0" + ret[start:]
 		}
 		ret += "h"
+	}
+	if v.ptr != 0 {
+		ret = "(" + strconv.FormatUint(v.ptr, 10) + "*) " + ret
 	}
 	return ret
 }
