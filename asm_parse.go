@@ -280,16 +280,6 @@ func (p *parser) expandMacro(m asmMacro, params []string) bool {
 	return false
 }
 
-// newAsmVal returns the correct type of assembly value for input.
-func (p *parser) newAsmVal(input string) asmVal {
-	if rpnStack := p.shunt(input); rpnStack != nil {
-		if ret := rpnStack.solve(); ret != nil {
-			return *ret
-		}
-	}
-	return asmString(input)
-}
-
 type symbol struct {
 	constant bool
 	val      asmVal
@@ -458,8 +448,17 @@ func (p *parser) parseMODEL(itemNum int, i *item) bool {
 	return true
 }
 
+func (p *parser) parseEQUALS(itemNum int, i *item) bool {
+	if rpnStack := p.shunt(i.params[0]); rpnStack != nil {
+		if ret := rpnStack.solve(); ret != nil {
+			p.setSym(i.sym, *ret, false)
+		}
+	}
+	return true
+}
+
 func (p *parser) parseEQU(itemNum int, i *item) bool {
-	p.setSym(i.sym, p.newAsmVal(i.params[0]), i.val[0] != '=')
+	p.setSym(i.sym, asmString(i.params[0]), true)
 	return true
 }
 
@@ -702,7 +701,7 @@ var parseFns = map[string]parseFn{
 	"PROC":       {(*parser).parsePROC, 0},
 	"ENDP":       {(*parser).parseENDP, 0},
 	".MODEL":     {(*parser).parseMODEL, 1},
-	"=":          {(*parser).parseEQU, 1},
+	"=":          {(*parser).parseEQUALS, 1},
 	"EQU":        {(*parser).parseEQU, 1},
 	"IFDEF":      {(*parser).parseIFDEF, 1},
 	"IFNDEF":     {(*parser).parseIFDEF, 1},

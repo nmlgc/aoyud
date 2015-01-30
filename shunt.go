@@ -230,7 +230,9 @@ func (p *parser) shunt(expr string) *shuntStack {
 func (s shuntStack) solve() *asmInt {
 	retStack := make(shuntStack, 0, cap(s))
 	for _, val := range s {
-		retStack.push(val.calc(&retStack))
+		if result := val.calc(&retStack); result != nil {
+			retStack.push(result)
+		}
 	}
 	if len(retStack) != 1 {
 		log.Println("invalid RPN expression:", s)
