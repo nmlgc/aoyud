@@ -57,6 +57,10 @@ type shuntOp struct {
 	function func(a, b *asmInt)
 }
 
+func (op *shuntOp) width() uint {
+	return 0
+}
+
 func (op *shuntOp) calc(retStack *shuntStack) shuntVal {
 	var args [2]asmInt
 	for i := 0; i < op.args; i++ {

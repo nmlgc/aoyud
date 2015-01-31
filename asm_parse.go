@@ -10,13 +10,31 @@ import (
 	"strings"
 )
 
-type asmVal fmt.Stringer
+type asmVal interface {
+	width() uint // Returns the width in bytes of the data value
+	fmt.Stringer
+}
 
 // asmInt represents an integer that will be output in a defined base.
 type asmInt struct {
 	n    int64  // The value itself
 	ptr  uint64 // Nonzero values turn the integer into a pointer of this length
 	base int
+}
+
+func (v asmInt) width() uint {
+	n := v.n
+	if n < 0 {
+		n = -n
+	}
+	if n < 0xFF {
+		return 1
+	} else if n < 0xFFFF {
+		return 2
+	} else if n < 0xFFFFFFFF {
+		return 4
+	}
+	return 8
 }
 
 func (v asmInt) String() string {
@@ -87,6 +105,10 @@ func newAsmInt(input string) (asmInt, error) {
 
 type asmString string
 
+func (v asmString) width() uint {
+	return uint(len(v))
+}
+
 func (v asmString) String() string {
 	return "\"" + string(v) + "\""
 }
@@ -112,6 +134,10 @@ type asmMacro struct {
 	args   []asmMacroArg
 	code   []item
 	locals []string
+}
+
+func (v asmMacro) width() uint {
+	return 0
 }
 
 func (v asmMacro) String() string {
