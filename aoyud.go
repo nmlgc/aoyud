@@ -36,20 +36,6 @@ var declarators = keywordGroup{
 	"GROUP", // groups
 }
 
-// conditionals lists all conditional directives that aren't kept in the parse
-// list.
-var conditionals = keywordGroup{
-	"IFDEF", "IFNDEF", "IF", "IFE", "IFB", "IFNB",
-	"IFIDN", "IFIDNI", "IFDIF", "IFDIFI",
-	"ELSEIFDEF", "ELSEIFNDEF", "ELSEIF", "ELSEIFE", "ELSEIFB", "ELSEIFNB",
-	"ELSEIFIDN", "ELSEIFIDNI", "ELSEIFDIF", "ELSEIFDIFI",
-	"ELSE", "ENDIF",
-}
-
-var macros = keywordGroup{
-	"MACRO", "FOR", "FORC", "REPT", "REPEAT", "WHILE", "IRP", "IRPC", "ENDM",
-}
-
 var linebreak = charGroup{'\r', '\n'}
 var whitespace = charGroup{' ', '\t'}
 var paramDelim = append(charGroup{',', ';'}, linebreak...)
@@ -95,10 +81,6 @@ func (g *keywordGroup) matches(word string) bool {
 		}
 	}
 	return false
-}
-
-func (g *keywordGroup) matchesInstruction(i *item) bool {
-	return i.typ == itemInstruction && g.matches(i.val)
 }
 
 // item represents a token or text string returned from the scanner.
