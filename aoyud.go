@@ -100,6 +100,46 @@ const (
 	itemInstruction                 // instruction or directive and its parameters
 )
 
+// Range defines a range of numbers. Negative values for Max indicate no upper
+// limit.
+type Range struct {
+	Min, Max int
+}
+
+func pReq(r int) Range {
+	return Range{r, r}
+}
+
+// checkParamRange returns true if the number of parameters in the item is
+// within the given range, and prints a log message if it isn't.
+func (i *item) checkParamRange(r Range) bool {
+	given := len(i.params)
+	below := given < r.Min
+	if below || uint(given) > uint(r.Max) {
+		var textErr, textParams string
+		if below {
+			if given > 0 {
+				textParams = ": " + strings.Join(i.params, ", ")
+			}
+			textErr = fmt.Sprintf(
+				"requires at least %d parameters, %d given", r.Min, given,
+			) + textParams
+		} else {
+			if r.Max == 0 {
+				textParams = "accepts no parameters"
+			} else {
+				textParams = fmt.Sprintf("accepts a maximum of %d parameters", r.Max)
+			}
+			extra := given - r.Max
+			textErr = textParams + fmt.Sprintf(
+				", ignoring %d additional ones: ", extra,
+			) + strings.Join(i.params[given-extra:], ", ")
+		}
+		log.Printf("%s %s", strings.ToUpper(i.val), textErr)
+	}
+	return !below
+}
+
 type lexer struct {
 	stream  lexStream
 	paths   []string  // search paths for relative includes
@@ -112,8 +152,8 @@ type stateFn func(*lexer) stateFn
 // lexFn represents a function handling a certain instruction or directive
 // at lexing time.
 type lexFn struct {
-	f         func(l *lexer, i *item)
-	minParams int
+	f          func(l *lexer, i *item)
+	paramRange Range
 }
 
 func (l *lexer) lexINCLUDE(i *item) {
@@ -175,12 +215,12 @@ func lexParam(l *lexer) stateFn {
 func (l *lexer) newInstruction(sym, val string) {
 	// Nope, turning this global would result in an initialization loop.
 	var lexFns = map[string]lexFn{
-		"INCLUDE": {(*lexer).lexINCLUDE, 1},
+		"INCLUDE": {(*lexer).lexINCLUDE, pReq(1)},
 	}
 
 	l.curInst.typ = itemInstruction
 	lexFunc, ok := lexFns[strings.ToUpper(l.curInst.val)]
-	if ok && l.curInst.checkMinParams(lexFunc.minParams) {
+	if ok && l.curInst.checkParamRange(lexFunc.paramRange) {
 		lexFunc.f(l, &l.curInst)
 	} else if len(l.curInst.val) > 0 {
 		l.items <- l.curInst
@@ -238,19 +278,6 @@ func lexFile(filename string, paths []string) *lexer {
 	}
 	go l.run()
 	return l
-}
-
-// checkMinParams checks if the item has at least min parameters and prints a
-// log message if it doesn't.
-func (i *item) checkMinParams(min int) bool {
-	if given := len(i.params); given < min {
-		log.Printf(
-			"%s requires at least %d parameters, %d given\n",
-			strings.ToUpper(i.val), min, given,
-		)
-		return false
-	}
-	return true
 }
 
 func (i item) String() string {

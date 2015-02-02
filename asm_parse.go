@@ -376,9 +376,9 @@ const (
 // at parsing time. The return value indicates whether the instruction should
 // stay in the parser's instruction list.
 type parseFn struct {
-	f         func(p *parser, itemNum int, i *item) bool
-	typ       parseFnType
-	minParams int
+	f          func(p *parser, itemNum int, i *item) bool
+	typ        parseFnType
+	paramRange Range
 }
 
 func (p *parser) parsePROC(itemNum int, i *item) bool {
@@ -736,44 +736,44 @@ func (p *parser) parseDummyMacro(itemNum int, i *item) bool {
 }
 
 var parseFns = map[string]parseFn{
-	"PROC":       {(*parser).parsePROC, 0, 0},
-	"ENDP":       {(*parser).parseENDP, 0, 0},
-	".MODEL":     {(*parser).parseMODEL, 0, 1},
-	"=":          {(*parser).parseEQUALS, 0, 1},
-	"EQU":        {(*parser).parseEQU, 0, 1},
-	"IFDEF":      {(*parser).parseIFDEF, typeConditional, 1},
-	"IFNDEF":     {(*parser).parseIFDEF, typeConditional, 1},
-	"IF":         {(*parser).parseIF, typeConditional, 1},
-	"IFE":        {(*parser).parseIF, typeConditional, 1},
-	"IFB":        {(*parser).parseIFB, typeConditional, 1},
-	"IFNB":       {(*parser).parseIFB, typeConditional, 1},
-	"IFIDN":      {(*parser).parseIFIDN, typeConditional, 2},
-	"IFIDNI":     {(*parser).parseIFIDN, typeConditional, 2},
-	"IFDIF":      {(*parser).parseIFIDN, typeConditional, 2},
-	"IFDIFI":     {(*parser).parseIFIDN, typeConditional, 2},
-	"ELSEIFDEF":  {(*parser).parseELSEIFDEF, typeConditional, 1},
-	"ELSEIFNDEF": {(*parser).parseELSEIFDEF, typeConditional, 1},
-	"ELSEIF":     {(*parser).parseELSEIF, typeConditional, 1},
-	"ELSEIFE":    {(*parser).parseELSEIF, typeConditional, 1},
-	"ELSEIFB":    {(*parser).parseELSEIFB, typeConditional, 1},
-	"ELSEIFNB":   {(*parser).parseELSEIFB, typeConditional, 1},
-	"ELSEIFIDN":  {(*parser).parseELSEIFIDN, typeConditional, 2},
-	"ELSEIFIDNI": {(*parser).parseELSEIFIDN, typeConditional, 2},
-	"ELSEIFDIF":  {(*parser).parseELSEIFIDN, typeConditional, 2},
-	"ELSEIFDIFI": {(*parser).parseELSEIFIDN, typeConditional, 2},
-	"ELSE":       {(*parser).parseELSE, typeConditional, 0},
-	"ENDIF":      {(*parser).parseENDIF, typeConditional, 0},
-	"OPTION":     {(*parser).parseOPTION, 0, 1},
+	"PROC":       {(*parser).parsePROC, 0, Range{0, -1}},
+	"ENDP":       {(*parser).parseENDP, 0, pReq(0)},
+	".MODEL":     {(*parser).parseMODEL, 0, Range{1, 6}},
+	"=":          {(*parser).parseEQUALS, 0, pReq(1)},
+	"EQU":        {(*parser).parseEQU, 0, Range{1, -1}},
+	"IFDEF":      {(*parser).parseIFDEF, typeConditional, pReq(1)},
+	"IFNDEF":     {(*parser).parseIFDEF, typeConditional, pReq(1)},
+	"IF":         {(*parser).parseIF, typeConditional, pReq(1)},
+	"IFE":        {(*parser).parseIF, typeConditional, pReq(1)},
+	"IFB":        {(*parser).parseIFB, typeConditional, pReq(1)},
+	"IFNB":       {(*parser).parseIFB, typeConditional, pReq(1)},
+	"IFIDN":      {(*parser).parseIFIDN, typeConditional, pReq(2)},
+	"IFIDNI":     {(*parser).parseIFIDN, typeConditional, pReq(2)},
+	"IFDIF":      {(*parser).parseIFIDN, typeConditional, pReq(2)},
+	"IFDIFI":     {(*parser).parseIFIDN, typeConditional, pReq(2)},
+	"ELSEIFDEF":  {(*parser).parseELSEIFDEF, typeConditional, pReq(1)},
+	"ELSEIFNDEF": {(*parser).parseELSEIFDEF, typeConditional, pReq(1)},
+	"ELSEIF":     {(*parser).parseELSEIF, typeConditional, pReq(1)},
+	"ELSEIFE":    {(*parser).parseELSEIF, typeConditional, pReq(1)},
+	"ELSEIFB":    {(*parser).parseELSEIFB, typeConditional, pReq(1)},
+	"ELSEIFNB":   {(*parser).parseELSEIFB, typeConditional, pReq(1)},
+	"ELSEIFIDN":  {(*parser).parseELSEIFIDN, typeConditional, pReq(2)},
+	"ELSEIFIDNI": {(*parser).parseELSEIFIDN, typeConditional, pReq(2)},
+	"ELSEIFDIF":  {(*parser).parseELSEIFIDN, typeConditional, pReq(2)},
+	"ELSEIFDIFI": {(*parser).parseELSEIFIDN, typeConditional, pReq(2)},
+	"ELSE":       {(*parser).parseELSE, typeConditional, pReq(0)},
+	"ENDIF":      {(*parser).parseENDIF, typeConditional, pReq(0)},
+	"OPTION":     {(*parser).parseOPTION, 0, Range{1, -1}},
 	// Macros
-	"MACRO":  {(*parser).parseMACRO, typeMacro, 0},
-	"FOR":    {(*parser).parseDummyMacro, typeMacro, 1},
-	"FORC":   {(*parser).parseDummyMacro, typeMacro, 1},
-	"REPT":   {(*parser).parseDummyMacro, typeMacro, 1},
-	"REPEAT": {(*parser).parseDummyMacro, typeMacro, 1},
-	"WHILE":  {(*parser).parseDummyMacro, typeMacro, 1},
-	"IRP":    {(*parser).parseDummyMacro, typeMacro, 2},
-	"IRPC":   {(*parser).parseDummyMacro, typeMacro, 2},
-	"ENDM":   {(*parser).parseENDM, typeMacro, 0},
+	"MACRO":  {(*parser).parseMACRO, typeMacro, Range{0, -1}},
+	"FOR":    {(*parser).parseDummyMacro, typeMacro, pReq(2)},
+	"FORC":   {(*parser).parseDummyMacro, typeMacro, Range{1, -1}}, // see JWasm's FORC.ASM
+	"REPT":   {(*parser).parseDummyMacro, typeMacro, pReq(1)},
+	"REPEAT": {(*parser).parseDummyMacro, typeMacro, pReq(1)},
+	"WHILE":  {(*parser).parseDummyMacro, typeMacro, pReq(1)},
+	"IRP":    {(*parser).parseDummyMacro, typeMacro, pReq(2)},
+	"IRPC":   {(*parser).parseDummyMacro, typeMacro, pReq(2)},
+	"ENDM":   {(*parser).parseENDM, typeMacro, pReq(0)},
 }
 
 // getSym returns the value of a symbol that is meant to exist in the map, or
@@ -815,7 +815,7 @@ func (p *parser) eval(i *item) {
 	ret := true
 	if i.typ == itemInstruction && (typ&typeMacro != 0 || (p.macro.nest == 0)) {
 		if ok {
-			if i.checkMinParams(fn.minParams) {
+			if i.checkParamRange(fn.paramRange) {
 				ret = fn.f(p, len(p.instructions), i)
 			}
 		} else if insSym, ok := p.getSym(i.val); ok == nil {
