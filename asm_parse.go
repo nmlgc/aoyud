@@ -601,17 +601,17 @@ var ifidnModeMap = map[string]ifidnMode{
 
 func (p *parser) parseIFDEF(itemNum int, i *item) bool {
 	_, defined := p.syms[p.toSymCase(i.params[0])]
-	mode := strings.ToUpper(i.val) == "IFDEF"
+	mode := i.val == "IFDEF"
 	return p.evalIf(defined == mode)
 }
 
 func (p *parser) parseIF(itemNum int, i *item) bool {
-	mode := strings.ToUpper(i.val) == "IF"
+	mode := i.val == "IF"
 	return p.evalIf(p.evalBool(i.params[0]) == mode)
 }
 
 func (p *parser) parseIFB(itemNum int, i *item) bool {
-	mode := strings.ToUpper(i.val) == "IFB"
+	mode := i.val == "IFB"
 	ret, err := p.isBlank(i.params[0])
 	if err != nil {
 		log.Println(err)
@@ -621,8 +621,7 @@ func (p *parser) parseIFB(itemNum int, i *item) bool {
 }
 
 func (p *parser) parseIFIDN(itemNum int, i *item) bool {
-	directive := strings.ToUpper(i.val)
-	mode := ifidnModeMap[directive]
+	mode := ifidnModeMap[i.val]
 	ret, err := mode.compareFn(p, i.params[0], i.params[1])
 	if err != nil {
 		log.Println(err)
@@ -632,16 +631,14 @@ func (p *parser) parseIFIDN(itemNum int, i *item) bool {
 }
 
 func (p *parser) parseELSEIFDEF(itemNum int, i *item) bool {
-	directive := strings.ToUpper(i.val)
 	_, defined := p.syms[p.toSymCase(i.params[0])]
-	mode := directive == "ELSEIFDEF"
-	return p.evalElseif(directive, defined == mode)
+	mode := i.val == "ELSEIFDEF"
+	return p.evalElseif(i.val, defined == mode)
 }
 
 func (p *parser) parseELSEIF(itemNum int, i *item) bool {
-	directive := strings.ToUpper(i.val)
-	mode := directive == "ELSEIF"
-	return p.evalElseif(directive, p.evalBool(i.params[0]) == mode)
+	mode := i.val == "ELSEIF"
+	return p.evalElseif(i.val, p.evalBool(i.params[0]) == mode)
 }
 
 func (p *parser) parseELSEIFB(itemNum int, i *item) bool {
@@ -650,20 +647,18 @@ func (p *parser) parseELSEIFB(itemNum int, i *item) bool {
 		log.Println(err)
 		return true
 	}
-	directive := strings.ToUpper(i.val)
-	mode := directive == "ELSEIFB"
-	return p.evalElseif(directive, ret == mode)
+	mode := i.val == "ELSEIFB"
+	return p.evalElseif(i.val, ret == mode)
 }
 
 func (p *parser) parseELSEIFIDN(itemNum int, i *item) bool {
-	directive := strings.ToUpper(i.val)
-	mode := ifidnModeMap[directive[4:]]
+	mode := ifidnModeMap[i.val[4:]]
 	ret, err := mode.compareFn(p, i.params[0], i.params[1])
 	if err != nil {
 		log.Println(err)
 		return true
 	}
-	return p.evalElseif(directive, ret == mode.identical)
+	return p.evalElseif(i.val, ret == mode.identical)
 }
 
 func (p *parser) parseELSE(itemNum int, i *item) bool {
@@ -805,8 +800,10 @@ func (p *parser) eval(i *item) {
 		p.syms = make(symMap)
 	}
 	var typ parseFnType = 0
-	fn, ok := parseFns[strings.ToUpper(i.val)]
+	insUpper := strings.ToUpper(i.val)
+	fn, ok := parseFns[insUpper]
 	if ok {
+		i.val = insUpper
 		typ = fn.typ
 	}
 	if !(typ&typeConditional != 0 || (p.ifMatch >= p.ifNest)) {
