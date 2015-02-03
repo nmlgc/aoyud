@@ -730,6 +730,80 @@ func (p *parser) parseDummyMacro(itemNum int, i *item) bool {
 	return true
 }
 
+// cpuFlag defines the flags for the @CPU value.
+type cpuFlag int
+
+const (
+	cpu8086 cpuFlag = 1 << 0
+	cpu186          = 1 << 1
+	cpu286          = 1 << 2
+	cpu386          = 1 << 3
+	cpu486          = 1 << 4
+	cpu586          = 1 << 5
+	cpu686          = 1 << 6
+	cpuPriv         = 1 << 7
+	cpu8087         = 1 << 8
+	cpu287          = 1 << 10 // yes, there's a gap
+	cpu387          = 1 << 11
+	cpuX64          = 1 << 12 // eh, whatever
+)
+
+func (p *parser) setCPU(directive string) {
+	f8086 := cpu8086 | cpu8087
+	f186 := f8086 | cpu186
+	f286 := f186 | cpu286 | cpu287
+	f386 := f286 | cpu386 | cpu387
+	f486 := f386 | cpu486
+	f586 := f486 | cpu586
+	f686 := f586 | cpu686
+	fX64 := f686 | cpuX64
+	// 8087, 287, and 387 keep previous non-FPU settings.
+	fCPUMask := cpuFlag(^(cpu8087 | cpu287 | cpu387))
+
+	cpuMap := map[string]cpuFlag{
+		"8086": f8086, "186": f186, "286": f286, "386": f386,
+		"486": f486, "586": f586, "686": f686, "X64": fX64,
+	}
+	fpuMap := map[string]cpuFlag{
+		"8087": cpu8087,
+		"287":  cpu8087 | cpu287,
+		"387":  cpu8087 | cpu287 | cpu387,
+	}
+
+	cpu := cpuFlag(0)
+	lastPos := len(directive) - 1
+	if last := directive[lastPos]; last == 'C' || last == 'N' {
+		directive = directive[:lastPos]
+	} else if last == 'P' {
+		cpu |= cpuPriv
+		directive = directive[:lastPos]
+	}
+	if flag, ok := cpuMap[directive]; ok {
+		cpu |= flag
+	} else if flag, ok := fpuMap[directive]; ok {
+		if prevCPU, ok := p.syms["@CPU"]; ok {
+			cpu |= cpuFlag(prevCPU.val.(asmInt).n) & fCPUMask
+		}
+		cpu |= flag
+	}
+	wordsize := int64(2)
+	if cpu&cpuX64 != 0 {
+		wordsize = 8
+	} else if cpu&cpu386 != 0 {
+		wordsize = 4
+	}
+	p.setSym("@CPU", asmInt{n: int64(cpu), base: 2}, false)
+	p.setSym("@WORDSIZE", asmInt{n: wordsize}, false)
+}
+
+func (p *parser) parseCPU(itemNum int, i *item) bool {
+	// No difference between P or . as the first character, so...
+	p.setCPU(i.val[1:])
+	return true
+}
+
+var cpuFn = parseFn{(*parser).parseCPU, 0, pReq(0)}
+
 var parseFns = map[string]parseFn{
 	"PROC":       {(*parser).parsePROC, 0, Range{0, -1}},
 	"ENDP":       {(*parser).parseENDP, 0, pReq(0)},
@@ -769,6 +843,32 @@ var parseFns = map[string]parseFn{
 	"IRP":    {(*parser).parseDummyMacro, typeMacro, pReq(2)},
 	"IRPC":   {(*parser).parseDummyMacro, typeMacro, pReq(2)},
 	"ENDM":   {(*parser).parseENDM, typeMacro, pReq(0)},
+	// CPUs
+	".8086": cpuFn, "P8086": cpuFn,
+	".186": cpuFn, "P186": cpuFn,
+	".286": cpuFn, "P286": cpuFn,
+	".286C": cpuFn, "P286N": cpuFn,
+	".286P": cpuFn, "P286P": cpuFn,
+	".386": cpuFn, "P386": cpuFn,
+	".386C": cpuFn, "P386N": cpuFn,
+	".386P": cpuFn, "P386P": cpuFn,
+	".486": cpuFn, "P486": cpuFn,
+	".486C": cpuFn, "P486N": cpuFn,
+	".486P": cpuFn, // [sic], there is no P486P
+	".586":  cpuFn, "P586": cpuFn,
+	".586C": cpuFn, "P586N": cpuFn,
+	".586P": cpuFn, // ditto
+	".686":  cpuFn, "P686": cpuFn,
+	".686P": cpuFn, // ditto, and no .686C and P686N either
+	".X64":  cpuFn,
+	".X64P": cpuFn,
+	// FPUs
+	".8087": cpuFn, "P8087": cpuFn,
+	".287": cpuFn, "P287": cpuFn,
+	".387": cpuFn, "P387": cpuFn,
+	// TASM also has .487 and .587, but those FPUs don't seem to
+	// added anything relevant. In fact, both MASM and JWasm don't
+	// support those directives.
 }
 
 // getSym returns the value of a symbol that is meant to exist in the map, or
@@ -798,6 +898,7 @@ func (p *parser) setSym(name string, val asmVal, constant bool) bool {
 func (p *parser) eval(i *item) {
 	if p.syms == nil {
 		p.syms = make(symMap)
+		p.setCPU("8086")
 	}
 	var typ parseFnType = 0
 	insUpper := strings.ToUpper(i.val)
