@@ -406,48 +406,25 @@ func (p *parser) parseENDP(itemNum int, i *item) bool {
 }
 
 func (p *parser) parseMODEL(itemNum int, i *item) bool {
-	// modelSym defines the @Model value for each memory model.
-	var modelSym = map[string]asmInt{
-		"TINY":  {n: 1},
-		"SMALL": {n: 2},
-		// Yes, the TASM manual is actually wrong here.
-		// For MASM, this is changed to 7.
-		"FLAT":    {n: 1},
-		"COMPACT": {n: 3},
-		"MEDIUM":  {n: 4},
-		"LARGE":   {n: 5},
-		"HUGE":    {n: 6},
-		"TCHUGE":  {n: 7},
-		"TPASCAL": {n: 0},
+	type modelVals struct {
+		model, codesize, datasize int64
 	}
 
-	// modelCodeSize defines the @CodeSize value for each memory model.
-	var modelCodeSize = map[string]asmInt{
-		"TINY":    {n: 0},
-		"SMALL":   {n: 0},
-		"COMPACT": {n: 0},
-		"MEDIUM":  {n: 1},
-		"LARGE":   {n: 1},
-		"HUGE":    {n: 1},
-		"TCHUGE":  {n: 1},
-		"TPASCAL": {n: 0},
-		"FLAT":    {n: 0},
+	var modelValMap = map[string]modelVals{
+		"TINY":    {1, 0, 0},
+		"SMALL":   {2, 0, 0},
+		"COMPACT": {3, 0, 1},
+		"MEDIUM":  {4, 1, 0},
+		"LARGE":   {5, 1, 1},
+		"HUGE":    {6, 1, 2},
+		"TCHUGE":  {7, 1, 2},
+		"TPASCAL": {0, 0, 1},
+		// Yes, the TASM manual actually got @Model wrong.
+		// For MASM, @Model is changed to 7.
+		"FLAT": {1, 0, 0},
 	}
 
-	// modelDataSize defines the @DataSize value for each memory model.
-	var modelDataSize = map[string]asmInt{
-		"TINY":    {n: 0},
-		"SMALL":   {n: 0},
-		"COMPACT": {n: 1},
-		"MEDIUM":  {n: 0},
-		"LARGE":   {n: 1},
-		"HUGE":    {n: 2},
-		"TCHUGE":  {n: 2},
-		"TPASCAL": {n: 1},
-		"FLAT":    {n: 0},
-	}
-
-	// interfaceSym defines values for the @Interface symbol
+	// interfaceSym defines values for the @Interface symbol.
 	var interfaceSym = map[string]asmInt{
 		"NOLANGUAGE": {n: 0},
 		"C":          {n: 1},
@@ -463,13 +440,13 @@ func (p *parser) parseMODEL(itemNum int, i *item) bool {
 
 	paramCount := len(i.params)
 	model := strings.ToUpper(i.params[0])
-	if modelVal, ok := modelSym[model]; ok {
+	if m, ok := modelValMap[model]; ok {
 		if p.syntax == "MASM" && model == "FLAT" {
-			modelVal.n = 7
+			m.model = 7
 		}
-		p.setSym("@MODEL", modelVal, false)
-		p.setSym("@CODESIZE", modelCodeSize[model], false)
-		p.setSym("@DATASIZE", modelDataSize[model], false)
+		p.setSym("@MODEL", asmInt{n: m.model}, false)
+		p.setSym("@CODESIZE", asmInt{n: m.codesize}, false)
+		p.setSym("@DATASIZE", asmInt{n: m.datasize}, false)
 	} else {
 		log.Printf("invalid memory model: %s\n", model)
 	}
