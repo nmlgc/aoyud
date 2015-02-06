@@ -83,12 +83,18 @@ func (g *keywordGroup) matches(word string) bool {
 	return false
 }
 
+type itemParams []string
+
+func (p itemParams) String() string {
+	return strings.Join(p, ", ")
+}
+
 // item represents a token or text string returned from the scanner.
 type item struct {
-	typ    itemType // The type of this item
-	sym    string   // Optional symbol name
-	val    string   // Name of the instruction or label. Limited to ASCII characters.
-	params []string // Instruction parameters
+	typ    itemType   // The type of this item
+	sym    string     // Optional symbol name
+	val    string     // Name of the instruction or label. Limited to ASCII characters.
+	params itemParams // Instruction parameters
 }
 
 // itemType identifies the type of lex items.
@@ -119,7 +125,7 @@ func (i *item) checkParamRange(r Range) bool {
 		var textErr, textParams string
 		if below {
 			if given > 0 {
-				textParams = ": " + strings.Join(i.params, ", ")
+				textParams = ": " + i.params.String()
 			}
 			textErr = fmt.Sprintf(
 				"requires at least %d parameters, %d given", r.Min, given,
@@ -292,7 +298,7 @@ func (i item) String() string {
 		ret += "\t" + i.val
 	}
 	if len(i.params) > 0 {
-		ret += "\t" + strings.Join(i.params, ", ")
+		ret += "\t" + i.params.String()
 	}
 	if i.typ == itemInstruction {
 		ret += "\n"

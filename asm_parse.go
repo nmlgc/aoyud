@@ -133,7 +133,7 @@ func (v asmMacroArg) String() string {
 type asmMacro struct {
 	args   []asmMacroArg
 	code   []item
-	locals []string
+	locals itemParams
 }
 
 func (v asmMacro) width() uint {
@@ -151,7 +151,7 @@ func (v asmMacro) String() string {
 		ret += arg.String()
 	}
 	if len(v.locals) != 0 {
-		ret += "\n\tLOCAL\t" + strings.Join(v.locals, ", ")
+		ret += "\n\tLOCAL\t" + v.locals.String()
 	}
 	ret += "\n"
 	for _, ins := range v.code {
@@ -213,7 +213,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, error) {
 			} else {
 				log.Printf(
 					"LOCAL directives must come first in a macro body, ignoring: %s",
-					strings.Join(code[i].params, ", "),
+					code[i].params.String(),
 				)
 			}
 		} else {
@@ -226,7 +226,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, error) {
 // expandMacro expands the multiline macro m using the given params and calls
 // p.eval for every line in the macro. Returns false if the expansion was
 // successful, true otherwise.
-func (p *parser) expandMacro(m asmMacro, params []string) bool {
+func (p *parser) expandMacro(m asmMacro, params itemParams) bool {
 	replaceMap := make(map[string]string)
 
 	setArg := func(name string, i int) bool {
@@ -279,7 +279,7 @@ func (p *parser) expandMacro(m asmMacro, params []string) bool {
 		switch arg.typ {
 		case "REST":
 		case "VARARG":
-			replaceMap[arg.name] = strings.Join(params[i:], ", ")
+			replaceMap[arg.name] = params[i:].String()
 		case "REQ":
 			if !setArg(arg.name, i) {
 				log.Printf("macro argument #%d (%s) is required", i, arg.name)
