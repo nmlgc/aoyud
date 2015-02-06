@@ -369,8 +369,17 @@ type parseFnType int
 
 const (
 	typeConditional parseFnType = (1 << iota) // Not kept in the parser's instruction list
+	typeDeclarator              = (1 << iota) // Requires a symbol name
 	typeMacro                   = (1 << iota)
 )
+
+func (i *item) checkSyntaxFor(fn parseFn) bool {
+	if (fn.typ&typeDeclarator != 0) && len(i.sym) == 0 {
+		log.Printf("%s needs a name", i.val)
+		return false
+	}
+	return i.checkParamRange(fn.paramRange)
+}
 
 // parseFn represents a function handling a certain instruction or directive
 // at parsing time. The return value indicates whether the instruction should
@@ -782,11 +791,11 @@ func (p *parser) parseCPU(itemNum int, i *item) bool {
 var cpuFn = parseFn{(*parser).parseCPU, 0, pReq(0)}
 
 var parseFns = map[string]parseFn{
-	"PROC":       {(*parser).parsePROC, 0, Range{0, -1}},
+	"PROC":       {(*parser).parsePROC, typeDeclarator, Range{0, -1}},
 	"ENDP":       {(*parser).parseENDP, 0, pReq(0)},
 	".MODEL":     {(*parser).parseMODEL, 0, Range{1, 6}},
-	"=":          {(*parser).parseEQUALS, 0, pReq(1)},
-	"EQU":        {(*parser).parseEQU, 0, Range{1, -1}},
+	"=":          {(*parser).parseEQUALS, typeDeclarator, pReq(1)},
+	"EQU":        {(*parser).parseEQU, typeDeclarator, Range{1, -1}},
 	"IFDEF":      {(*parser).parseIFDEF, typeConditional, pReq(1)},
 	"IFNDEF":     {(*parser).parseIFDEF, typeConditional, pReq(1)},
 	"IF":         {(*parser).parseIF, typeConditional, pReq(1)},
@@ -811,7 +820,7 @@ var parseFns = map[string]parseFn{
 	"ENDIF":      {(*parser).parseENDIF, typeConditional, pReq(0)},
 	"OPTION":     {(*parser).parseOPTION, 0, Range{1, -1}},
 	// Macros
-	"MACRO":  {(*parser).parseMACRO, typeMacro, Range{0, -1}},
+	"MACRO":  {(*parser).parseMACRO, typeDeclarator | typeMacro, Range{0, -1}},
 	"FOR":    {(*parser).parseDummyMacro, typeMacro, pReq(2)},
 	"FORC":   {(*parser).parseDummyMacro, typeMacro, Range{1, -1}}, // see JWasm's FORC.ASM
 	"REPT":   {(*parser).parseDummyMacro, typeMacro, pReq(1)},
@@ -890,7 +899,7 @@ func (p *parser) eval(i *item) {
 	ret := true
 	if i.typ == itemInstruction && (typ&typeMacro != 0 || (p.macro.nest == 0)) {
 		if ok {
-			if i.checkParamRange(fn.paramRange) {
+			if i.checkSyntaxFor(fn) {
 				ret = fn.f(p, len(p.instructions), i)
 			}
 		} else if insSym, ok := p.getSym(i.val); ok == nil {
