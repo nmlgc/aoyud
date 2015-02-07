@@ -342,6 +342,7 @@ type parser struct {
 	// Open blocks
 	proc  nestableBlock
 	macro nestableBlock
+	seg   *asmSegment
 	// Conditionals
 	ifNest  int  // IF nesting level
 	ifMatch int  // Last IF nesting level that evaluated to true
@@ -788,6 +789,52 @@ func (p *parser) parseCPU(itemNum int, i *item) bool {
 	return true
 }
 
+func (p *parser) parseSEGMENT(itemNum int, i *item) bool {
+	sym := p.toSymCase(i.sym)
+	seg := &asmSegment{}
+	var attributes = map[string]func(){
+		"USE16": func() { seg.wordsize = 2 },
+		"USE32": func() { seg.wordsize = 4 },
+		"USE64": func() { seg.wordsize = 8 },
+	}
+	if old, ok := p.syms[sym]; ok {
+		switch old.val.(type) {
+		case *asmSegment:
+			seg = old.val.(*asmSegment)
+		default:
+			log.Printf("cannot redeclare %s as a segment, ignoring", sym)
+			return true
+		}
+	} else {
+		wordsize, _ := p.getSym("@WORDSIZE") // can never fail
+		seg.wordsize = uint(wordsize.(asmInt).n)
+		seg.name = sym
+	}
+	if len(i.params) > 0 {
+		for stream := newLexStream(i.params[0]); stream.peek() != eof; {
+			param := strings.ToUpper(stream.nextSegmentParam())
+			if attrib, ok := attributes[param]; ok {
+				attrib()
+			}
+		}
+	}
+	seg.prev = p.seg
+	p.setSym(sym, seg, false)
+	p.seg = seg
+	return true
+}
+
+func (p *parser) parseENDS(itemNum int, i *item) bool {
+	// TODO: Don't ignore STRUC(T)s.
+	sym := p.toSymCase(i.sym)
+	if p.seg != nil && p.seg.name == sym {
+		p.seg = p.seg.prev
+	} else {
+		log.Println("unmatched ENDS:", sym)
+	}
+	return true
+}
+
 var cpuFn = parseFn{(*parser).parseCPU, 0, pReq(0)}
 
 var parseFns = map[string]parseFn{
@@ -855,6 +902,10 @@ var parseFns = map[string]parseFn{
 	// TASM also has .487 and .587, but those FPUs don't seem to
 	// added anything relevant. In fact, both MASM and JWasm don't
 	// support those directives.
+
+	// Segments
+	"SEGMENT": {(*parser).parseSEGMENT, typeDeclarator, Range{0, 1}},
+	"ENDS":    {(*parser).parseENDS, typeDeclarator, pReq(0)},
 }
 
 // getSym returns the value of a symbol that is meant to exist in the map, or

@@ -1,5 +1,9 @@
 package main
 
+import (
+	"log"
+)
+
 // lexStream provides methods to iteratively read through a byte stream using
 // delimiter characters.
 type lexStream struct {
@@ -57,6 +61,21 @@ func (s *lexStream) nextToken(delim *charGroup) string {
 	ret := s.nextUntil(delim)
 	if len(ret) == 0 {
 		ret = string(s.next())
+	}
+	return ret
+}
+
+// nextSegmentParam returns the next token delimited by either whitespace
+// or quotes.
+func (s *lexStream) nextSegmentParam() string {
+	ret := s.nextUntil(&segmentDelim)
+	if next := s.peek(); len(ret) == 0 && quotes.matches(next) {
+		nextStr := string(s.next())
+		ret = nextStr + s.nextUntil(&charGroup{next})
+		if s.next() == eof {
+			log.Printf("missing a closing %c: %s", next, ret)
+		}
+		ret += nextStr
 	}
 	return ret
 }
