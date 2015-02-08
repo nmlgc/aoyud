@@ -490,7 +490,7 @@ func (p *parser) parseEQU(itemNum int, i *item) bool {
 // text evaluates s as a text string used in a conditional directive.
 func (p *parser) text(s string) (string, error) {
 	fail := func() (string, error) {
-		return "", fmt.Errorf("invalid <text string> or %text_macro: %s", s)
+		return "", fmt.Errorf("invalid <text string> or %%text_macro: %s", s)
 	}
 	if s[0] == '<' {
 		s = s[1:]
@@ -899,8 +899,8 @@ var parseFns = map[string]parseFn{
 	".8087": cpuFn, "P8087": cpuFn,
 	".287": cpuFn, "P287": cpuFn,
 	".387": cpuFn, "P387": cpuFn,
-	// TASM also has .487 and .587, but those FPUs don't seem to
-	// added anything relevant. In fact, both MASM and JWasm don't
+	// TASM also has .487 and .587, but those FPUs don't seem to have
+	// added anything relevant. In fact, neither MASM nor JWasm
 	// support those directives.
 
 	// Segments
