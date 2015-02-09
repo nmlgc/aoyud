@@ -265,12 +265,18 @@ func (s shuntStack) solve() *asmInt {
 	return &result
 }
 
-// evalBool wraps shunt and solve, and casts the result to a bool.
-func (p *parser) evalBool(expr string) bool {
+// evalInt wraps shunt and solve.
+func (p *parser) evalInt(expr string) *asmInt {
 	if rpnStack := p.shunt(expr); rpnStack != nil {
-		if ret := rpnStack.solve(); ret != nil {
-			return ret.n != 0
-		}
+		return rpnStack.solve()
+	}
+	return nil
+}
+
+// evalBool wraps evalInt and casts its result to a bool.
+func (p *parser) evalBool(expr string) bool {
+	if ret := p.evalInt(expr); ret != nil {
+		return ret.n != 0
 	}
 	// Default to false in the case of an error... for now, at least.
 	return false
