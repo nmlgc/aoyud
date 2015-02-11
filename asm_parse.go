@@ -369,9 +369,13 @@ func splitColon(s string) (string, string) {
 type parseFnType int
 
 const (
-	typeConditional parseFnType = (1 << iota) // Not kept in the parser's instruction list
+	typeEmitData    parseFnType = (1 << iota) // Emits data into the program image
+	typeEmitCode                = (1 << iota) // Emits code into the program image
+	typeConditional             = (1 << iota) // Not kept in the parser's instruction list
 	typeDeclarator              = (1 << iota) // Requires a symbol name
 	typeMacro                   = (1 << iota)
+
+	typeEmit = typeEmitData | typeEmitCode
 )
 
 func (i *item) checkSyntaxFor(fn parseFn) bool {
@@ -835,6 +839,25 @@ func (p *parser) parseENDS(itemNum int, i *item) bool {
 	return true
 }
 
+func (p *parser) parseDATA(itemNum int, i *item) bool {
+	var widthMap = map[string]uint{
+		"DB": 1, "DW": 2, "DD": 4, "DF": 6, "DP": 6, "DQ": 8, "DT": 10,
+	}
+	if i.sym != "" {
+		ptr := asmDataPtr{seg: p.seg, off: -1, w: widthMap[i.val]}
+		p.setSym(i.sym, ptr, true)
+	}
+	return true
+}
+
+func (p *parser) parseLABEL(itemNum int, i *item) bool {
+	if size := p.evalInt(i.params[0]); size != nil {
+		ptr := asmDataPtr{seg: p.seg, off: -1, w: uint(size.n)}
+		p.setSym(i.sym, ptr, true)
+	}
+	return true
+}
+
 var cpuFn = parseFn{(*parser).parseCPU, 0, pReq(0)}
 
 var parseFns = map[string]parseFn{
@@ -906,6 +929,15 @@ var parseFns = map[string]parseFn{
 	// Segments
 	"SEGMENT": {(*parser).parseSEGMENT, typeDeclarator, Range{0, 1}},
 	"ENDS":    {(*parser).parseENDS, typeDeclarator, pReq(0)},
+	// Data allocations
+	"DB":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
+	"DW":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
+	"DD":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
+	"DQ":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
+	"DF":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
+	"DP":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
+	"DT":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
+	"LABEL": {(*parser).parseLABEL, typeDeclarator, pReq(1)},
 }
 
 // getSym returns the value of a symbol that is meant to exist in the map, or
@@ -948,12 +980,14 @@ func (p *parser) eval(i *item) {
 		return
 	}
 	ret := true
-	if i.typ == itemInstruction && (typ&typeMacro != 0 || (p.macro.nest == 0)) {
+	if typ&typeMacro != 0 || p.macro.nest == 0 {
 		if ok {
-			if i.checkSyntaxFor(fn) {
+			if typ&typeEmit != 0 && p.seg == nil {
+				log.Println("code or data emission requires a segment:", i)
+			} else if i.checkSyntaxFor(fn) {
 				ret = fn.f(p, len(p.instructions), i)
 			}
-		} else if insSym, ok := p.getSym(i.val); ok == nil {
+		} else if insSym, err := p.getSym(i.val); err == nil {
 			switch insSym.(type) {
 			case asmMacro:
 				ret = p.expandMacro(insSym.(asmMacro), i.params)
