@@ -342,6 +342,7 @@ type parser struct {
 	// Open blocks
 	proc  nestableBlock
 	macro nestableBlock
+	struc *asmStruc
 	seg   *asmSegment
 	// Conditionals
 	ifNest  int  // IF nesting level
@@ -371,6 +372,7 @@ type parseFnType int
 const (
 	typeEmitData    parseFnType = (1 << iota) // Emits data into the program image
 	typeEmitCode                = (1 << iota) // Emits code into the program image
+	typeCodeBlock               = (1 << iota) // Can't appear inside a STRUC or UNION
 	typeConditional             = (1 << iota) // Not kept in the parser's instruction list
 	typeDeclarator              = (1 << iota) // Requires a symbol name
 	typeMacro                   = (1 << iota)
@@ -378,9 +380,16 @@ const (
 	typeEmit = typeEmitData | typeEmitCode
 )
 
-func (i *item) checkSyntaxFor(fn parseFn) bool {
-	if (fn.typ&typeDeclarator != 0) && len(i.sym) == 0 {
+func (i *item) missingRequiredSym() bool {
+	if i.sym == "" {
 		log.Printf("%s needs a name", i.val)
+		return true
+	}
+	return false
+}
+
+func (i *item) checkSyntaxFor(fn parseFn) bool {
+	if (fn.typ&typeDeclarator != 0) && i.missingRequiredSym() {
 		return false
 	}
 	return i.checkParamRange(fn.paramRange)
@@ -829,13 +838,26 @@ func (p *parser) parseSEGMENT(itemNum int, i *item) bool {
 }
 
 func (p *parser) parseENDS(itemNum int, i *item) bool {
-	// TODO: Don't ignore STRUC(T)s.
 	sym := p.toSymCase(i.sym)
 	if p.seg != nil && p.seg.name == sym {
+		if p.struc != nil {
+			log.Println(p.struc.sprintOpen())
+			p.struc = nil
+		}
 		p.seg = p.seg.prev
-	} else {
-		log.Println("unmatched ENDS:", sym)
+		return true
+	} else if p.struc != nil {
+		// See parseSTRUC for an explanation of this stupidity
+		expSym := ""
+		if p.struc.prev == nil {
+			expSym = p.struc.name
+		}
+		if sym == expSym {
+			p.struc = p.struc.prev
+			return true
+		}
 	}
+	log.Println("unmatched ENDS:", sym)
 	return true
 }
 
@@ -843,7 +865,7 @@ func (p *parser) parseDATA(itemNum int, i *item) bool {
 	var widthMap = map[string]uint{
 		"DB": 1, "DW": 2, "DD": 4, "DF": 6, "DP": 6, "DQ": 8, "DT": 10,
 	}
-	if i.sym != "" {
+	if i.sym != "" && p.seg != nil {
 		ptr := asmDataPtr{seg: p.seg, off: -1, w: widthMap[i.val]}
 		p.setSym(i.sym, ptr, true)
 	}
@@ -851,7 +873,7 @@ func (p *parser) parseDATA(itemNum int, i *item) bool {
 }
 
 func (p *parser) parseLABEL(itemNum int, i *item) bool {
-	if size := p.evalInt(i.params[0]); size != nil {
+	if size := p.evalInt(i.params[0]); size != nil && p.seg != nil {
 		ptr := asmDataPtr{seg: p.seg, off: -1, w: uint(size.n)}
 		p.setSym(i.sym, ptr, true)
 	}
@@ -861,9 +883,9 @@ func (p *parser) parseLABEL(itemNum int, i *item) bool {
 var cpuFn = parseFn{(*parser).parseCPU, 0, pReq(0)}
 
 var parseFns = map[string]parseFn{
-	"PROC":       {(*parser).parsePROC, typeDeclarator, Range{0, -1}},
-	"ENDP":       {(*parser).parseENDP, 0, pReq(0)},
-	".MODEL":     {(*parser).parseMODEL, 0, Range{1, 6}},
+	"PROC":       {(*parser).parsePROC, typeDeclarator | typeCodeBlock, Range{0, -1}},
+	"ENDP":       {(*parser).parseENDP, typeCodeBlock, pReq(0)},
+	".MODEL":     {(*parser).parseMODEL, typeCodeBlock, Range{1, 6}},
 	"=":          {(*parser).parseEQUALS, typeDeclarator, pReq(1)},
 	"EQU":        {(*parser).parseEQU, typeDeclarator, Range{1, -1}},
 	"IFDEF":      {(*parser).parseIFDEF, typeConditional, pReq(1)},
@@ -927,8 +949,8 @@ var parseFns = map[string]parseFn{
 	// support those directives.
 
 	// Segments
-	"SEGMENT": {(*parser).parseSEGMENT, typeDeclarator, Range{0, 1}},
-	"ENDS":    {(*parser).parseENDS, typeDeclarator, pReq(0)},
+	"SEGMENT": {(*parser).parseSEGMENT, typeDeclarator | typeCodeBlock, Range{0, 1}},
+	"ENDS":    {(*parser).parseENDS, 0, pReq(0)},
 	// Data allocations
 	"DB":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
 	"DW":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
@@ -938,6 +960,10 @@ var parseFns = map[string]parseFn{
 	"DP":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
 	"DT":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
 	"LABEL": {(*parser).parseLABEL, typeDeclarator, pReq(1)},
+	// Structures
+	"STRUCT": {(*parser).parseSTRUC, 0, Range{0, 2}}, // Yes, it's possible to have
+	"STRUC":  {(*parser).parseSTRUC, 0, Range{0, 2}}, // unnamed structures and
+	"UNION":  {(*parser).parseSTRUC, 0, Range{0, 2}}, // unions inside named ones.
 }
 
 // getSym returns the value of a symbol that is meant to exist in the map, or
@@ -982,8 +1008,10 @@ func (p *parser) eval(i *item) {
 	ret := true
 	if typ&typeMacro != 0 || p.macro.nest == 0 {
 		if ok {
-			if typ&typeEmit != 0 && p.seg == nil {
+			if typ&typeEmit != 0 && p.seg == nil && p.struc == nil {
 				log.Println("code or data emission requires a segment:", i)
+			} else if p.struc != nil && typ&(typeCodeBlock|typeEmitCode) != 0 {
+				log.Printf("%s not allowed inside structure definition", i.val)
 			} else if i.checkSyntaxFor(fn) {
 				ret = fn.f(p, len(p.instructions), i)
 			}
@@ -1000,6 +1028,9 @@ func (p *parser) eval(i *item) {
 }
 
 func (p *parser) end() {
+	if p.struc != nil {
+		log.Println(p.struc.sprintOpen())
+	}
 	if p.proc.nest != 0 {
 		log.Printf("ignoring procedure %s without an ENDP directive\n", p.proc.name)
 	}
