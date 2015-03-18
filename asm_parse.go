@@ -103,14 +103,15 @@ func newAsmInt(input string) (asmInt, error) {
 	return asmInt{n: n, base: base}, nil
 }
 
-type asmString string
+// asmExpression represents an evaluable expression string.
+type asmExpression string
 
-func (v asmString) width() uint {
+func (v asmExpression) width() uint {
 	return uint(len(v))
 }
 
-func (v asmString) String() string {
-	return "\"" + string(v) + "\""
+func (v asmExpression) String() string {
+	return "(" + string(v) + ")"
 }
 
 type asmMacroArg struct {
@@ -496,7 +497,7 @@ func (p *parser) parseEQUALS(itemNum int, i *item) bool {
 }
 
 func (p *parser) parseEQU(itemNum int, i *item) bool {
-	p.setSym(i.sym, asmString(i.params[0]), true)
+	p.setSym(i.sym, asmExpression(i.params[0]), true)
 	return true
 }
 
@@ -527,8 +528,8 @@ func (p *parser) text(s string) (string, error) {
 		switch sym.(type) {
 		case asmInt:
 			return strconv.FormatInt(sym.(asmInt).n, 10), nil
-		case asmString:
-			return string(sym.(asmString)), nil
+		case asmExpression:
+			return string(sym.(asmExpression)), nil
 		case asmMacro:
 			return "", fmt.Errorf("can't use macro name in expression: %s", name)
 		default:

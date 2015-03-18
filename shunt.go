@@ -221,8 +221,8 @@ func (p *parser) shuntLoop(s *shuntState, expr string) error {
 			s.opSet = &binaryOperators
 		case *shuntOp:
 			s.opSet = s.retStack.pushOp(&s.opStack, token.(*shuntOp))
-		case asmString:
-			err = p.shuntLoop(s, string(token.(asmString)))
+		case asmExpression:
+			err = p.shuntLoop(s, string(token.(asmExpression)))
 		default:
 			err = fmt.Errorf("unknown value: %s", token)
 		}
