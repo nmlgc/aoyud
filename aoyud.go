@@ -31,7 +31,7 @@ var declarators = keywordGroup{
 	"MACRO", "TYPEDEF", // macros
 	"CATSTR", "SUBSTR", "INSTR", "SIZESTR", // string macros
 	"PROC", "ENDP", // procedures
-	"STRUC", "STRUCT", "ENDS", // structures
+	"STRUC", "STRUCT", "UNION", "ENDS", // structures
 	"SEGMENT", "ENDS", // segments
 	"GROUP", // groups
 }
