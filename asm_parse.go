@@ -38,24 +38,29 @@ func (v asmInt) width() uint {
 }
 
 func (v asmInt) String() string {
+	var ret string
 	if v.base == 0 {
 		v.base = 10
 	}
-	ret := strconv.FormatInt(v.n, v.base)
-	switch v.base {
-	case 2:
-		ret += "b"
-	case 8:
-		ret += "o"
-	case 16:
-		start := 0
-		if ret[0] == '-' || ret[0] == '+' {
-			start++
+	if v.base <= 16 {
+		ret = strconv.FormatInt(v.n, v.base)
+		switch v.base {
+		case 2:
+			ret += "b"
+		case 8:
+			ret += "o"
+		case 16:
+			start := 0
+			if ret[0] == '-' || ret[0] == '+' {
+				start++
+			}
+			if ret[start] >= 'a' && ret[start] <= 'f' {
+				ret = ret[:start] + "0" + ret[start:]
+			}
+			ret += "h"
 		}
-		if ret[start] >= 'a' && ret[start] <= 'f' {
-			ret = ret[:start] + "0" + ret[start:]
-		}
-		ret += "h"
+	} else if v.base == 256 {
+		ret = quoteASCII(v.formatASCII())
 	}
 	if v.ptr != 0 {
 		ret = "(" + strconv.FormatUint(v.ptr, 10) + "*) " + ret

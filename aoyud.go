@@ -43,7 +43,7 @@ var paramDelim = append(charGroup{',', ';'}, linebreak...)
 var wordDelim = append(append(charGroup{':'}, whitespace...), paramDelim...)
 var insDelim = append(charGroup{'='}, wordDelim...)
 var shuntDelim = append(charGroup{
-	'+', '-', '*', '/', '|', '(', ')', '[', ']', '<', '>', ':', '&', '"',
+	'+', '-', '*', '/', '|', '(', ')', '[', ']', '<', '>', ':', '&', '"', '\'',
 }, whitespace...)
 var segmentDelim = append(charGroup{'\'', '"'}, whitespace...)
 

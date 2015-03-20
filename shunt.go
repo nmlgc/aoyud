@@ -48,6 +48,15 @@ func (v asmInt) calc(retStack *shuntStack) shuntVal {
 	return v
 }
 
+func (v asmString) calc(retStack *shuntStack) shuntVal {
+	ret, err := v.toInt()
+	if err != nil {
+		log.Println(err)
+		return nil
+	}
+	return ret
+}
+
 type shuntOp struct {
 	id         shuntOpID
 	precedence int
@@ -160,6 +169,10 @@ func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (asmVal, error)
 	token := s.nextToken(&shuntDelim)
 	if isAsmInt(token) {
 		return newAsmInt(token)
+	} else if quote := token[0]; quotes.matches(quote) && len(token) == 1 {
+		token = s.nextUntil(&charGroup{quote})
+		s.nextAssert(quote, token)
+		return asmString(token), nil
 	}
 	tokenUpper := strings.ToUpper(token)
 	if typ, ok := asmTypes[tokenUpper]; ok {
@@ -218,6 +231,9 @@ func (p *parser) shuntLoop(s *shuntState, expr string) error {
 		switch token.(type) {
 		case asmInt:
 			s.retStack.push(token.(asmInt))
+			s.opSet = &binaryOperators
+		case asmString:
+			s.retStack.push(token.(asmString))
 			s.opSet = &binaryOperators
 		case *shuntOp:
 			s.opSet = s.retStack.pushOp(&s.opStack, token.(*shuntOp))

@@ -36,6 +36,16 @@ func (s *lexStream) next() byte {
 	return ret
 }
 
+// nextAssert consumes the next byte in the input and prints an error message
+// if is not equal to b.
+func (s *lexStream) nextAssert(b byte, prev string) bool {
+	ret := s.next() == b
+	if !ret {
+		log.Printf("missing a closing %c: %s", b, prev)
+	}
+	return ret
+}
+
 // peekUntil returns but does not consume the next word that is delimited by
 // the given character group.
 func (s *lexStream) peekUntil(delim *charGroup) string {
@@ -72,9 +82,7 @@ func (s *lexStream) nextSegmentParam() string {
 	if next := s.peek(); len(ret) == 0 && quotes.matches(next) {
 		nextStr := string(s.next())
 		ret = nextStr + s.nextUntil(&charGroup{next})
-		if s.next() == eof {
-			log.Printf("missing a closing %c: %s", next, ret)
-		}
+		s.nextAssert(next, ret)
 		ret += nextStr
 	}
 	return ret
