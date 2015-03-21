@@ -8,7 +8,7 @@ import (
 // delimiter characters.
 type lexStream struct {
 	input string
-	pos   int
+	c     int // Current character within the input string
 }
 
 const eof = 0
@@ -23,16 +23,16 @@ func (s *lexStream) ignore(delim *charGroup) {
 
 // peek returns but does not consume the next byte in the input.
 func (s *lexStream) peek() byte {
-	if s.pos >= len(s.input) {
+	if s.c >= len(s.input) {
 		return eof
 	}
-	return s.input[s.pos]
+	return s.input[s.c]
 }
 
 // next consumes the next byte in the input.
 func (s *lexStream) next() byte {
 	ret := s.peek()
-	s.pos++
+	s.c++
 	return ret
 }
 
@@ -49,20 +49,18 @@ func (s *lexStream) nextAssert(b byte, prev string) bool {
 // peekUntil returns but does not consume the next word that is delimited by
 // the given character group.
 func (s *lexStream) peekUntil(delim *charGroup) string {
-	pos := s.pos
-	ret := s.nextUntil(delim)
-	s.pos = pos
-	return ret
+	tmp := *s
+	return tmp.nextUntil(delim)
 }
 
 // nextUntil consumes the next word that is delimited by the given character group.
 func (s *lexStream) nextUntil(delim *charGroup) string {
 	s.ignore(&whitespace)
-	start := s.pos
+	start := s.c
 	for !delim.matches(s.peek()) && s.peek() != eof {
 		s.next()
 	}
-	return s.input[start:s.pos]
+	return s.input[start:s.c]
 }
 
 // nextToken works like nextUntil, but consumes one additional character if
@@ -95,7 +93,7 @@ func (s *lexStream) nextParam() string {
 	level := 0
 
 	s.ignore(&whitespace)
-	start := s.pos
+	start := s.c
 	for !(level == 0 && paramDelim.matches(s.peek())) && s.peek() != eof {
 		b := s.next()
 
@@ -120,10 +118,10 @@ func (s *lexStream) nextParam() string {
 			}
 		}
 	}
-	for s.pos > start && whitespace.matches(s.input[s.pos-1]) {
-		s.pos--
+	for s.c > start && whitespace.matches(s.input[s.c-1]) {
+		s.c--
 	}
-	return s.input[start:s.pos]
+	return s.input[start:s.c]
 }
 
 func newLexStream(input string) *lexStream {

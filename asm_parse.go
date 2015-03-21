@@ -257,9 +257,9 @@ func (p *parser) expandMacro(m asmMacro, params itemParams) bool {
 		andCached := false
 		for stream := newLexStream(s); stream.peek() != eof; {
 			// Be sure to copy any whitespace in s.
-			start := stream.pos
+			start := stream.c
 			stream.ignore(&whitespace)
-			ret += s[start:stream.pos]
+			ret += s[start:stream.c]
 
 			token := stream.nextToken(&shuntDelim)
 			if token == "&" {
