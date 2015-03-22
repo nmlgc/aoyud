@@ -386,44 +386,44 @@ const (
 	typeEmit = typeEmitData | typeEmitCode
 )
 
-func (i *item) missingRequiredSym() bool {
-	if i.sym == "" {
-		log.Printf("%s needs a name", i.val)
+func (it *item) missingRequiredSym() bool {
+	if it.sym == "" {
+		log.Printf("%s needs a name", it.val)
 		return true
 	}
 	return false
 }
 
-func (i *item) checkSyntaxFor(fn parseFn) bool {
-	if (fn.typ&typeDeclarator != 0) && i.missingRequiredSym() {
+func (it *item) checkSyntaxFor(fn parseFn) bool {
+	if (fn.typ&typeDeclarator != 0) && it.missingRequiredSym() {
 		return false
 	}
-	return i.checkParamRange(fn.paramRange)
+	return it.checkParamRange(fn.paramRange)
 }
 
 // parseFn represents a function handling a certain instruction or directive
 // at parsing time. The return value indicates whether the instruction should
 // stay in the parser's instruction list.
 type parseFn struct {
-	f          func(p *parser, itemNum int, i *item) bool
+	f          func(p *parser, itemNum int, it *item) bool
 	typ        parseFnType
 	paramRange Range
 }
 
-func (p *parser) parsePROC(itemNum int, i *item) bool {
+func (p *parser) parsePROC(itemNum int, it *item) bool {
 	if p.proc.nest == 0 {
-		p.proc.name = i.sym
+		p.proc.name = it.sym
 		p.proc.start = itemNum
 	} else {
-		log.Printf("ignoring nested procedure %s\n", i.sym)
+		log.Printf("ignoring nested procedure %s\n", it.sym)
 	}
 	p.proc.nest++
 	return true
 }
 
-func (p *parser) parseENDP(itemNum int, i *item) bool {
+func (p *parser) parseENDP(itemNum int, it *item) bool {
 	if p.proc.nest == 0 {
-		log.Printf("ignoring procedure %s without a PROC directive\n", i.sym)
+		log.Printf("ignoring procedure %s without a PROC directive\n", it.sym)
 	} else if p.proc.nest == 1 {
 		log.Printf(
 			"found procedure %s ranging from lex items #%d-#%d\n",
@@ -434,7 +434,7 @@ func (p *parser) parseENDP(itemNum int, i *item) bool {
 	return true
 }
 
-func (p *parser) parseMODEL(itemNum int, i *item) bool {
+func (p *parser) parseMODEL(itemNum int, it *item) bool {
 	type modelVals struct {
 		model, codesize, datasize int64
 	}
@@ -467,8 +467,8 @@ func (p *parser) parseMODEL(itemNum int, i *item) bool {
 		"CPP":        {n: 8},
 	}
 
-	paramCount := len(i.params)
-	model := strings.ToUpper(i.params[0])
+	paramCount := len(it.params)
+	model := strings.ToUpper(it.params[0])
 	if m, ok := modelValMap[model]; ok {
 		if p.syntax == "MASM" && model == "FLAT" {
 			m.model = 7
@@ -480,7 +480,7 @@ func (p *parser) parseMODEL(itemNum int, i *item) bool {
 		log.Printf("invalid memory model: %s\n", model)
 	}
 	if paramCount > 1 {
-		language := strings.ToUpper(i.params[1])
+		language := strings.ToUpper(it.params[1])
 		if interfaceVal, ok := interfaceSym[language]; ok {
 			p.setSym("@INTERFACE", interfaceVal, false)
 		} else {
@@ -492,17 +492,17 @@ func (p *parser) parseMODEL(itemNum int, i *item) bool {
 	return true
 }
 
-func (p *parser) parseEQUALS(itemNum int, i *item) bool {
-	if rpnStack := p.shunt(i.params[0]); rpnStack != nil {
+func (p *parser) parseEQUALS(itemNum int, it *item) bool {
+	if rpnStack := p.shunt(it.params[0]); rpnStack != nil {
 		if ret := rpnStack.solve(); ret != nil {
-			p.setSym(i.sym, *ret, false)
+			p.setSym(it.sym, *ret, false)
 		}
 	}
 	return true
 }
 
-func (p *parser) parseEQU(itemNum int, i *item) bool {
-	p.setSym(i.sym, asmExpression(i.params[0]), true)
+func (p *parser) parseEQU(itemNum int, it *item) bool {
+	p.setSym(it.sym, asmExpression(it.params[0]), true)
 	return true
 }
 
@@ -605,20 +605,20 @@ var ifidnModeMap = map[string]ifidnMode{
 	"IFDIFI": {compareFn: (*parser).isEqualFold, identical: false},
 }
 
-func (p *parser) parseIFDEF(itemNum int, i *item) bool {
-	_, defined := p.syms[p.toSymCase(i.params[0])]
-	mode := i.val == "IFDEF"
+func (p *parser) parseIFDEF(itemNum int, it *item) bool {
+	_, defined := p.syms[p.toSymCase(it.params[0])]
+	mode := it.val == "IFDEF"
 	return p.evalIf(defined == mode)
 }
 
-func (p *parser) parseIF(itemNum int, i *item) bool {
-	mode := i.val == "IF"
-	return p.evalIf(p.evalBool(i.params[0]) == mode)
+func (p *parser) parseIF(itemNum int, it *item) bool {
+	mode := it.val == "IF"
+	return p.evalIf(p.evalBool(it.params[0]) == mode)
 }
 
-func (p *parser) parseIFB(itemNum int, i *item) bool {
-	mode := i.val == "IFB"
-	ret, err := p.isBlank(i.params[0])
+func (p *parser) parseIFB(itemNum int, it *item) bool {
+	mode := it.val == "IFB"
+	ret, err := p.isBlank(it.params[0])
 	if err != nil {
 		log.Println(err)
 		return true
@@ -626,9 +626,9 @@ func (p *parser) parseIFB(itemNum int, i *item) bool {
 	return p.evalIf(ret == mode)
 }
 
-func (p *parser) parseIFIDN(itemNum int, i *item) bool {
-	mode := ifidnModeMap[i.val]
-	ret, err := mode.compareFn(p, i.params[0], i.params[1])
+func (p *parser) parseIFIDN(itemNum int, it *item) bool {
+	mode := ifidnModeMap[it.val]
+	ret, err := mode.compareFn(p, it.params[0], it.params[1])
 	if err != nil {
 		log.Println(err)
 		return true
@@ -636,42 +636,42 @@ func (p *parser) parseIFIDN(itemNum int, i *item) bool {
 	return p.evalIf(ret == mode.identical)
 }
 
-func (p *parser) parseELSEIFDEF(itemNum int, i *item) bool {
-	_, defined := p.syms[p.toSymCase(i.params[0])]
-	mode := i.val == "ELSEIFDEF"
-	return p.evalElseif(i.val, defined == mode)
+func (p *parser) parseELSEIFDEF(itemNum int, it *item) bool {
+	_, defined := p.syms[p.toSymCase(it.params[0])]
+	mode := it.val == "ELSEIFDEF"
+	return p.evalElseif(it.val, defined == mode)
 }
 
-func (p *parser) parseELSEIF(itemNum int, i *item) bool {
-	mode := i.val == "ELSEIF"
-	return p.evalElseif(i.val, p.evalBool(i.params[0]) == mode)
+func (p *parser) parseELSEIF(itemNum int, it *item) bool {
+	mode := it.val == "ELSEIF"
+	return p.evalElseif(it.val, p.evalBool(it.params[0]) == mode)
 }
 
-func (p *parser) parseELSEIFB(itemNum int, i *item) bool {
-	ret, err := p.isBlank(i.params[0])
+func (p *parser) parseELSEIFB(itemNum int, it *item) bool {
+	ret, err := p.isBlank(it.params[0])
 	if err != nil {
 		log.Println(err)
 		return true
 	}
-	mode := i.val == "ELSEIFB"
-	return p.evalElseif(i.val, ret == mode)
+	mode := it.val == "ELSEIFB"
+	return p.evalElseif(it.val, ret == mode)
 }
 
-func (p *parser) parseELSEIFIDN(itemNum int, i *item) bool {
-	mode := ifidnModeMap[i.val[4:]]
-	ret, err := mode.compareFn(p, i.params[0], i.params[1])
+func (p *parser) parseELSEIFIDN(itemNum int, it *item) bool {
+	mode := ifidnModeMap[it.val[4:]]
+	ret, err := mode.compareFn(p, it.params[0], it.params[1])
 	if err != nil {
 		log.Println(err)
 		return true
 	}
-	return p.evalElseif(i.val, ret == mode.identical)
+	return p.evalElseif(it.val, ret == mode.identical)
 }
 
-func (p *parser) parseELSE(itemNum int, i *item) bool {
+func (p *parser) parseELSE(itemNum int, it *item) bool {
 	return p.evalElseif("ELSE", true)
 }
 
-func (p *parser) parseENDIF(itemNum int, i *item) bool {
+func (p *parser) parseENDIF(itemNum int, it *item) bool {
 	if p.ifNest == 0 {
 		log.Println("found ENDIF without a matching condition")
 		return true
@@ -684,7 +684,7 @@ func (p *parser) parseENDIF(itemNum int, i *item) bool {
 	return false
 }
 
-func (p *parser) parseOPTION(itemNum int, i *item) bool {
+func (p *parser) parseOPTION(itemNum int, it *item) bool {
 	var options = map[string](map[string]func()){
 		"CASEMAP": {
 			"NONE":      func() { p.symCase = true },
@@ -692,7 +692,7 @@ func (p *parser) parseOPTION(itemNum int, i *item) bool {
 			"ALL":       func() { p.symCase = false },
 		},
 	}
-	for _, param := range i.params {
+	for _, param := range it.params {
 		key, val := splitColon(param)
 		key = strings.ToUpper(key)
 		val = strings.ToUpper(val)
@@ -707,16 +707,16 @@ func (p *parser) parseOPTION(itemNum int, i *item) bool {
 	return true
 }
 
-func (p *parser) parseMACRO(itemNum int, i *item) bool {
+func (p *parser) parseMACRO(itemNum int, it *item) bool {
 	if p.macro.nest == 0 {
-		p.macro.name = i.sym
+		p.macro.name = it.sym
 		p.macro.start = itemNum
 	}
 	p.macro.nest++
 	return true
 }
 
-func (p *parser) parseENDM(itemNum int, i *item) bool {
+func (p *parser) parseENDM(itemNum int, it *item) bool {
 	if p.macro.nest == 1 && p.macro.name != "" {
 		macro, err := p.newMacro(itemNum)
 		if err != nil {
@@ -731,7 +731,7 @@ func (p *parser) parseENDM(itemNum int, i *item) bool {
 }
 
 // Placeholder for any non-MACRO block terminated with ENDM
-func (p *parser) parseDummyMacro(itemNum int, i *item) bool {
+func (p *parser) parseDummyMacro(itemNum int, it *item) bool {
 	p.macro.nest++
 	return true
 }
@@ -802,14 +802,14 @@ func (p *parser) setCPU(directive string) {
 	p.setSym("@WORDSIZE", asmInt{n: wordsize}, false)
 }
 
-func (p *parser) parseCPU(itemNum int, i *item) bool {
+func (p *parser) parseCPU(itemNum int, it *item) bool {
 	// No difference between P or . as the first character, so...
-	p.setCPU(i.val[1:])
+	p.setCPU(it.val[1:])
 	return true
 }
 
-func (p *parser) parseSEGMENT(itemNum int, i *item) bool {
-	sym := p.toSymCase(i.sym)
+func (p *parser) parseSEGMENT(itemNum int, it *item) bool {
+	sym := p.toSymCase(it.sym)
 	seg := &asmSegment{}
 	var attributes = map[string]func(){
 		"USE16": func() { seg.wordsize = 2 },
@@ -829,8 +829,8 @@ func (p *parser) parseSEGMENT(itemNum int, i *item) bool {
 		seg.wordsize = uint(wordsize.(asmInt).n)
 		seg.name = sym
 	}
-	if len(i.params) > 0 {
-		for stream := newLexStream(i.params[0]); stream.peek() != eof; {
+	if len(it.params) > 0 {
+		for stream := newLexStream(it.params[0]); stream.peek() != eof; {
 			param := strings.ToUpper(stream.nextSegmentParam())
 			if attrib, ok := attributes[param]; ok {
 				attrib()
@@ -843,8 +843,8 @@ func (p *parser) parseSEGMENT(itemNum int, i *item) bool {
 	return true
 }
 
-func (p *parser) parseENDS(itemNum int, i *item) bool {
-	sym := p.toSymCase(i.sym)
+func (p *parser) parseENDS(itemNum int, it *item) bool {
+	sym := p.toSymCase(it.sym)
 	if p.seg != nil && p.seg.name == sym {
 		if p.struc != nil {
 			log.Println(p.struc.sprintOpen())
@@ -867,21 +867,21 @@ func (p *parser) parseENDS(itemNum int, i *item) bool {
 	return true
 }
 
-func (p *parser) parseDATA(itemNum int, i *item) bool {
+func (p *parser) parseDATA(itemNum int, it *item) bool {
 	var widthMap = map[string]uint{
 		"DB": 1, "DW": 2, "DD": 4, "DF": 6, "DP": 6, "DQ": 8, "DT": 10,
 	}
-	if i.sym != "" && p.seg != nil {
-		ptr := asmDataPtr{seg: p.seg, off: -1, w: widthMap[i.val]}
-		p.setSym(i.sym, ptr, true)
+	if it.sym != "" && p.seg != nil {
+		ptr := asmDataPtr{seg: p.seg, off: -1, w: widthMap[it.val]}
+		p.setSym(it.sym, ptr, true)
 	}
 	return true
 }
 
-func (p *parser) parseLABEL(itemNum int, i *item) bool {
-	if size := p.evalInt(i.params[0]); size != nil && p.seg != nil {
+func (p *parser) parseLABEL(itemNum int, it *item) bool {
+	if size := p.evalInt(it.params[0]); size != nil && p.seg != nil {
 		ptr := asmDataPtr{seg: p.seg, off: -1, w: uint(size.n)}
-		p.setSym(i.sym, ptr, true)
+		p.setSym(it.sym, ptr, true)
 	}
 	return true
 }
@@ -994,18 +994,18 @@ func (p *parser) setSym(name string, val asmVal, constant bool) bool {
 }
 
 // eval evaluates the given item, updates the parse state accordingly, and
-// keeps i in the parser's instruction list, unless it lies on an ignored
+// keeps it in the parser's instruction list, unless it lies on an ignored
 // conditional branch.
-func (p *parser) eval(i *item) {
+func (p *parser) eval(it *item) {
 	if p.syms == nil {
 		p.syms = make(symMap)
 		p.setCPU("8086")
 	}
 	var typ parseFnType = 0
-	insUpper := strings.ToUpper(i.val)
+	insUpper := strings.ToUpper(it.val)
 	fn, ok := parseFns[insUpper]
 	if ok {
-		i.val = insUpper
+		it.val = insUpper
 		typ = fn.typ
 	}
 	if !(typ&typeConditional != 0 || (p.ifMatch >= p.ifNest)) {
@@ -1015,21 +1015,21 @@ func (p *parser) eval(i *item) {
 	if typ&typeMacro != 0 || p.macro.nest == 0 {
 		if ok {
 			if typ&typeEmit != 0 && p.seg == nil && p.struc == nil {
-				log.Println("code or data emission requires a segment:", i)
+				log.Println("code or data emission requires a segment:", it)
 			} else if p.struc != nil && typ&(typeCodeBlock|typeEmitCode) != 0 {
-				log.Printf("%s not allowed inside structure definition", i.val)
-			} else if i.checkSyntaxFor(fn) {
-				ret = fn.f(p, len(p.instructions), i)
+				log.Printf("%s not allowed inside structure definition", it.val)
+			} else if it.checkSyntaxFor(fn) {
+				ret = fn.f(p, len(p.instructions), it)
 			}
-		} else if insSym, err := p.getSym(i.val); err == nil {
+		} else if insSym, err := p.getSym(it.val); err == nil {
 			switch insSym.(type) {
 			case asmMacro:
-				ret = p.expandMacro(insSym.(asmMacro), i.params)
+				ret = p.expandMacro(insSym.(asmMacro), it.params)
 			}
 		}
 	}
 	if ret {
-		p.instructions = append(p.instructions, *i)
+		p.instructions = append(p.instructions, *it)
 	}
 }
 

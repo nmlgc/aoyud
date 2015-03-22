@@ -120,14 +120,14 @@ func pReq(r int) Range {
 
 // checkParamRange returns true if the number of parameters in the item is
 // within the given range, and prints a log message if it isn't.
-func (i *item) checkParamRange(r Range) bool {
-	given := len(i.params)
+func (it *item) checkParamRange(r Range) bool {
+	given := len(it.params)
 	below := given < r.Min
 	if below || uint(given) > uint(r.Max) {
 		var textErr, textParams string
 		if below {
 			if given > 0 {
-				textParams = ": " + i.params.String()
+				textParams = ": " + it.params.String()
 			}
 			textErr = fmt.Sprintf(
 				"requires at least %d parameters, %d given", r.Min, given,
@@ -141,9 +141,9 @@ func (i *item) checkParamRange(r Range) bool {
 			extra := given - r.Max
 			textErr = textParams + fmt.Sprintf(
 				", ignoring %d additional ones: ", extra,
-			) + strings.Join(i.params[given-extra:], ", ")
+			) + strings.Join(it.params[given-extra:], ", ")
 		}
-		log.Printf("%s %s", strings.ToUpper(i.val), textErr)
+		log.Printf("%s %s", strings.ToUpper(it.val), textErr)
 	}
 	return !below
 }
@@ -160,14 +160,14 @@ type stateFn func(*lexer) stateFn
 // lexFn represents a function handling a certain instruction or directive
 // at lexing time.
 type lexFn struct {
-	f          func(l *lexer, i *item)
+	f          func(l *lexer, it *item)
 	paramRange Range
 }
 
-func (l *lexer) lexINCLUDE(i *item) {
+func (l *lexer) lexINCLUDE(it *item) {
 	// Remember to restore the old filename once we're done with this one
 	defer log.SetPrefix(log.Prefix())
-	newL := lexFile(i.params[0], l.paths)
+	newL := lexFile(it.params[0], l.paths)
 	for i := range newL.items {
 		l.items <- i
 	}
@@ -239,10 +239,10 @@ func (l *lexer) newInstruction(sym, val string) {
 }
 
 // emitItem emits the currently cached instruction, followed by the given item.
-func (l *lexer) emitItem(i item) {
+func (l *lexer) emitItem(it item) {
 	l.newInstruction("", "")
-	if len(i.val) > 0 || len(i.sym) > 0 {
-		l.items <- i
+	if len(it.val) > 0 || len(it.sym) > 0 {
+		l.items <- it
 	}
 }
 
@@ -288,21 +288,21 @@ func lexFile(filename string, paths []string) *lexer {
 	return l
 }
 
-func (i item) String() string {
+func (it item) String() string {
 	var ret string
-	switch i.typ {
+	switch it.typ {
 	case itemLabel:
-		ret = i.sym + ":\n"
+		ret = it.sym + ":\n"
 	case itemInstruction:
-		if i.sym != "" {
-			ret = i.sym
+		if it.sym != "" {
+			ret = it.sym
 		}
-		ret += "\t" + i.val
+		ret += "\t" + it.val
 	}
-	if len(i.params) > 0 {
-		ret += "\t" + i.params.String()
+	if len(it.params) > 0 {
+		ret += "\t" + it.params.String()
 	}
-	if i.typ == itemInstruction {
+	if it.typ == itemInstruction {
 		ret += "\n"
 	}
 	return ret
