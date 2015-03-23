@@ -52,7 +52,7 @@ func (v asmStruc) sprintOpen() string {
 	return str
 }
 
-func (p *parser) parseSTRUC(itemNum int, it *item) bool {
+func (p *parser) parseSTRUC(itemNum int, it *item) {
 	// Top-level structures require a symbol name *before* the directive.
 	// On the other hand, nested structures can *optionally* have a
 	// symbol name *after* the directive. Yes, it's stupid.
@@ -63,12 +63,12 @@ func (p *parser) parseSTRUC(itemNum int, it *item) bool {
 				"name of nested structure must come after %s: %s",
 				it.val, it.sym,
 			)
-			return true
+			return
 		} else if len(it.params) > 0 {
 			sym = it.params[0]
 		}
 	} else if it.missingRequiredSym() {
-		return true
+		return
 	}
 	struc := &asmStruc{
 		name: p.toSymCase(sym),
@@ -82,5 +82,4 @@ func (p *parser) parseSTRUC(itemNum int, it *item) bool {
 		p.setSym(struc.name, struc, true)
 	}
 	p.struc = struc
-	return true
 }

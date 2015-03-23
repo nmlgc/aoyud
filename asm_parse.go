@@ -402,15 +402,14 @@ func (it *item) checkSyntaxFor(fn parseFn) bool {
 }
 
 // parseFn represents a function handling a certain instruction or directive
-// at parsing time. The return value indicates whether the instruction should
-// stay in the parser's instruction list.
+// at parsing time.
 type parseFn struct {
-	f          func(p *parser, itemNum int, it *item) bool
+	f          func(p *parser, itemNum int, it *item)
 	typ        parseFnType
 	paramRange Range
 }
 
-func (p *parser) parsePROC(itemNum int, it *item) bool {
+func (p *parser) parsePROC(itemNum int, it *item) {
 	if p.proc.nest == 0 {
 		p.proc.name = it.sym
 		p.proc.start = itemNum
@@ -418,10 +417,9 @@ func (p *parser) parsePROC(itemNum int, it *item) bool {
 		log.Printf("ignoring nested procedure %s\n", it.sym)
 	}
 	p.proc.nest++
-	return true
 }
 
-func (p *parser) parseENDP(itemNum int, it *item) bool {
+func (p *parser) parseENDP(itemNum int, it *item) {
 	if p.proc.nest == 0 {
 		log.Printf("ignoring procedure %s without a PROC directive\n", it.sym)
 	} else if p.proc.nest == 1 {
@@ -431,10 +429,9 @@ func (p *parser) parseENDP(itemNum int, it *item) bool {
 		)
 	}
 	p.proc.nest--
-	return true
 }
 
-func (p *parser) parseMODEL(itemNum int, it *item) bool {
+func (p *parser) parseMODEL(itemNum int, it *item) {
 	type modelVals struct {
 		model, codesize, datasize int64
 	}
@@ -489,21 +486,18 @@ func (p *parser) parseMODEL(itemNum int, it *item) bool {
 	} else {
 		p.setSym("@INTERFACE", interfaceSym["NOLANGUAGE"], false)
 	}
-	return true
 }
 
-func (p *parser) parseEQUALS(itemNum int, it *item) bool {
+func (p *parser) parseEQUALS(itemNum int, it *item) {
 	if rpnStack := p.shunt(it.params[0]); rpnStack != nil {
 		if ret := rpnStack.solve(); ret != nil {
 			p.setSym(it.sym, *ret, false)
 		}
 	}
-	return true
 }
 
-func (p *parser) parseEQU(itemNum int, it *item) bool {
+func (p *parser) parseEQU(itemNum int, it *item) {
 	p.setSym(it.sym, asmExpression(it.params[0]), true)
-	return true
 }
 
 // text evaluates s as a text string used in a conditional directive.
@@ -567,20 +561,19 @@ func (p *parser) isEqualFold(s1, s2 string) (bool, error) {
 	return strings.EqualFold(ret1, ret2), err2
 }
 
-func (p *parser) evalIf(match bool) bool {
+func (p *parser) evalIf(match bool) {
 	valid := match && p.ifMatch == p.ifNest
 	if valid {
 		p.ifMatch++
 	}
 	p.ifNest++
 	p.ifElse = !valid
-	return false
 }
 
-func (p *parser) evalElseif(directive string, match bool) bool {
+func (p *parser) evalElseif(directive string, match bool) {
 	if p.ifNest == 0 {
 		log.Println("unmatched", directive)
-		return true
+		return
 	}
 	if p.ifMatch == p.ifNest {
 		p.ifMatch--
@@ -588,7 +581,6 @@ func (p *parser) evalElseif(directive string, match bool) bool {
 		p.ifMatch++
 		p.ifElse = false
 	}
-	return false
 }
 
 type ifidnMode struct {
@@ -605,86 +597,85 @@ var ifidnModeMap = map[string]ifidnMode{
 	"IFDIFI": {compareFn: (*parser).isEqualFold, identical: false},
 }
 
-func (p *parser) parseIFDEF(itemNum int, it *item) bool {
+func (p *parser) parseIFDEF(itemNum int, it *item) {
 	_, defined := p.syms[p.toSymCase(it.params[0])]
 	mode := it.val == "IFDEF"
-	return p.evalIf(defined == mode)
+	p.evalIf(defined == mode)
 }
 
-func (p *parser) parseIF(itemNum int, it *item) bool {
+func (p *parser) parseIF(itemNum int, it *item) {
 	mode := it.val == "IF"
-	return p.evalIf(p.evalBool(it.params[0]) == mode)
+	p.evalIf(p.evalBool(it.params[0]) == mode)
 }
 
-func (p *parser) parseIFB(itemNum int, it *item) bool {
+func (p *parser) parseIFB(itemNum int, it *item) {
 	mode := it.val == "IFB"
 	ret, err := p.isBlank(it.params[0])
 	if err != nil {
 		log.Println(err)
-		return true
+		return
 	}
-	return p.evalIf(ret == mode)
+	p.evalIf(ret == mode)
 }
 
-func (p *parser) parseIFIDN(itemNum int, it *item) bool {
+func (p *parser) parseIFIDN(itemNum int, it *item) {
 	mode := ifidnModeMap[it.val]
 	ret, err := mode.compareFn(p, it.params[0], it.params[1])
 	if err != nil {
 		log.Println(err)
-		return true
+		return
 	}
-	return p.evalIf(ret == mode.identical)
+	p.evalIf(ret == mode.identical)
 }
 
-func (p *parser) parseELSEIFDEF(itemNum int, it *item) bool {
+func (p *parser) parseELSEIFDEF(itemNum int, it *item) {
 	_, defined := p.syms[p.toSymCase(it.params[0])]
 	mode := it.val == "ELSEIFDEF"
-	return p.evalElseif(it.val, defined == mode)
+	p.evalElseif(it.val, defined == mode)
 }
 
-func (p *parser) parseELSEIF(itemNum int, it *item) bool {
+func (p *parser) parseELSEIF(itemNum int, it *item) {
 	mode := it.val == "ELSEIF"
-	return p.evalElseif(it.val, p.evalBool(it.params[0]) == mode)
+	p.evalElseif(it.val, p.evalBool(it.params[0]) == mode)
 }
 
-func (p *parser) parseELSEIFB(itemNum int, it *item) bool {
+func (p *parser) parseELSEIFB(itemNum int, it *item) {
 	ret, err := p.isBlank(it.params[0])
 	if err != nil {
 		log.Println(err)
-		return true
+		return
 	}
 	mode := it.val == "ELSEIFB"
-	return p.evalElseif(it.val, ret == mode)
+	p.evalElseif(it.val, ret == mode)
 }
 
-func (p *parser) parseELSEIFIDN(itemNum int, it *item) bool {
+func (p *parser) parseELSEIFIDN(itemNum int, it *item) {
 	mode := ifidnModeMap[it.val[4:]]
 	ret, err := mode.compareFn(p, it.params[0], it.params[1])
 	if err != nil {
 		log.Println(err)
-		return true
+		return
 	}
-	return p.evalElseif(it.val, ret == mode.identical)
+	p.evalElseif(it.val, ret == mode.identical)
 }
 
-func (p *parser) parseELSE(itemNum int, it *item) bool {
-	return p.evalElseif("ELSE", true)
+func (p *parser) parseELSE(itemNum int, it *item) {
+	p.evalElseif("ELSE", true)
 }
 
-func (p *parser) parseENDIF(itemNum int, it *item) bool {
+func (p *parser) parseENDIF(itemNum int, it *item) {
 	if p.ifNest == 0 {
 		log.Println("found ENDIF without a matching condition")
-		return true
+		return
 	}
 	if p.ifMatch == p.ifNest {
 		p.ifMatch--
 		p.ifElse = false
 	}
 	p.ifNest--
-	return false
 }
 
-func (p *parser) parseOPTION(itemNum int, it *item) bool {
+func (p *parser) parseOPTION(itemNum int, it *item) {
 	var options = map[string](map[string]func()){
 		"CASEMAP": {
 			"NONE":      func() { p.symCase = true },
@@ -704,19 +695,17 @@ func (p *parser) parseOPTION(itemNum int, it *item) bool {
 			}
 		}
 	}
-	return true
 }
 
-func (p *parser) parseMACRO(itemNum int, it *item) bool {
+func (p *parser) parseMACRO(itemNum int, it *item) {
 	if p.macro.nest == 0 {
 		p.macro.name = it.sym
 		p.macro.start = itemNum
 	}
 	p.macro.nest++
-	return true
 }
 
-func (p *parser) parseENDM(itemNum int, it *item) bool {
+func (p *parser) parseENDM(itemNum int, it *item) {
 	if p.macro.nest == 1 && p.macro.name != "" {
 		macro, err := p.newMacro(itemNum)
 		if err != nil {
@@ -727,13 +716,11 @@ func (p *parser) parseENDM(itemNum int, it *item) bool {
 		p.macro.name = ""
 	}
 	p.macro.nest--
-	return true
 }
 
 // Placeholder for any non-MACRO block terminated with ENDM
-func (p *parser) parseDummyMacro(itemNum int, it *item) bool {
+func (p *parser) parseDummyMacro(itemNum int, it *item) {
 	p.macro.nest++
-	return true
 }
 
 // cpuFlag defines the flags for the @CPU value.
@@ -802,13 +789,12 @@ func (p *parser) setCPU(directive string) {
 	p.setSym("@WORDSIZE", asmInt{n: wordsize}, false)
 }
 
-func (p *parser) parseCPU(itemNum int, it *item) bool {
+func (p *parser) parseCPU(itemNum int, it *item) {
 	// No difference between P or . as the first character, so...
 	p.setCPU(it.val[1:])
-	return true
 }
 
-func (p *parser) parseSEGMENT(itemNum int, it *item) bool {
+func (p *parser) parseSEGMENT(itemNum int, it *item) {
 	sym := p.toSymCase(it.sym)
 	seg := &asmSegment{}
 	var attributes = map[string]func(){
@@ -822,7 +808,7 @@ func (p *parser) parseSEGMENT(itemNum int, it *item) bool {
 			seg = old.val.(*asmSegment)
 		default:
 			log.Printf("cannot redeclare %s as a segment, ignoring", sym)
-			return true
+			return
 		}
 	} else {
 		wordsize, _ := p.getSym("@WORDSIZE") // can never fail
@@ -840,10 +826,9 @@ func (p *parser) parseSEGMENT(itemNum int, it *item) bool {
 	seg.prev = p.seg
 	p.setSym(sym, seg, false)
 	p.seg = seg
-	return true
 }
 
-func (p *parser) parseENDS(itemNum int, it *item) bool {
+func (p *parser) parseENDS(itemNum int, it *item) {
 	sym := p.toSymCase(it.sym)
 	if p.seg != nil && p.seg.name == sym {
 		if p.struc != nil {
@@ -851,7 +836,7 @@ func (p *parser) parseENDS(itemNum int, it *item) bool {
 			p.struc = nil
 		}
 		p.seg = p.seg.prev
-		return true
+		return
 	} else if p.struc != nil {
 		// See parseSTRUC for an explanation of this stupidity
 		expSym := ""
@@ -860,14 +845,13 @@ func (p *parser) parseENDS(itemNum int, it *item) bool {
 		}
 		if sym == expSym {
 			p.struc = p.struc.prev
-			return true
+			return
 		}
 	}
 	log.Println("unmatched ENDS:", sym)
-	return true
 }
 
-func (p *parser) parseDATA(itemNum int, it *item) bool {
+func (p *parser) parseDATA(itemNum int, it *item) {
 	var widthMap = map[string]uint{
 		"DB": 1, "DW": 2, "DD": 4, "DF": 6, "DP": 6, "DQ": 8, "DT": 10,
 	}
@@ -875,15 +859,13 @@ func (p *parser) parseDATA(itemNum int, it *item) bool {
 		ptr := asmDataPtr{seg: p.seg, off: -1, w: widthMap[it.val]}
 		p.setSym(it.sym, ptr, true)
 	}
-	return true
 }
 
-func (p *parser) parseLABEL(itemNum int, it *item) bool {
+func (p *parser) parseLABEL(itemNum int, it *item) {
 	if size := p.evalInt(it.params[0]); size != nil && p.seg != nil {
 		ptr := asmDataPtr{seg: p.seg, off: -1, w: uint(size.n)}
 		p.setSym(it.sym, ptr, true)
 	}
-	return true
 }
 
 var cpuFn = parseFn{(*parser).parseCPU, 0, pReq(0)}
@@ -1019,7 +1001,8 @@ func (p *parser) eval(it *item) {
 			} else if p.struc != nil && typ&(typeCodeBlock|typeEmitCode) != 0 {
 				log.Printf("%s not allowed inside structure definition", it.val)
 			} else if it.checkSyntaxFor(fn) {
-				ret = fn.f(p, len(p.instructions), it)
+				fn.f(p, len(p.instructions), it)
+				ret = typ&typeConditional == 0
 			}
 		} else if insSym, err := p.getSym(it.val); err == nil {
 			switch insSym.(type) {
