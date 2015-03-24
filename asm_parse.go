@@ -161,7 +161,7 @@ func (v asmMacro) String() string {
 	}
 	ret += "\n"
 	for _, ins := range v.code {
-		ret += ins.String()
+		ret += ins.String() + "\n"
 	}
 	return ret + "\tENDM"
 }
@@ -185,7 +185,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, error) {
 				// TASM would actually accept this, but we better
 				// complain since it doesn't make sense at all.
 				return asmMacro{}, fmt.Errorf(
-					"macro %s: %s:%s must be the last parameter\n",
+					"macro %s: %s:%s must be the last parameter",
 					p.macro.name, args[i].name, args[i].typ,
 				)
 			}
@@ -414,17 +414,17 @@ func (p *parser) parsePROC(itemNum int, it *item) {
 		p.proc.name = it.sym
 		p.proc.start = itemNum
 	} else {
-		log.Printf("ignoring nested procedure %s\n", it.sym)
+		log.Printf("ignoring nested procedure %s", it.sym)
 	}
 	p.proc.nest++
 }
 
 func (p *parser) parseENDP(itemNum int, it *item) {
 	if p.proc.nest == 0 {
-		log.Printf("ignoring procedure %s without a PROC directive\n", it.sym)
+		log.Printf("ignoring procedure %s without a PROC directive", it.sym)
 	} else if p.proc.nest == 1 {
 		log.Printf(
-			"found procedure %s ranging from lex items #%d-#%d\n",
+			"found procedure %s ranging from lex items #%d-#%d",
 			p.proc.name, p.proc.start, itemNum,
 		)
 	}
@@ -474,14 +474,14 @@ func (p *parser) parseMODEL(itemNum int, it *item) {
 		p.setSym("@CODESIZE", asmInt{n: m.codesize}, false)
 		p.setSym("@DATASIZE", asmInt{n: m.datasize}, false)
 	} else {
-		log.Printf("invalid memory model: %s\n", model)
+		log.Printf("invalid memory model: %s", model)
 	}
 	if paramCount > 1 {
 		language := strings.ToUpper(it.params[1])
 		if interfaceVal, ok := interfaceSym[language]; ok {
 			p.setSym("@INTERFACE", interfaceVal, false)
 		} else {
-			log.Printf("invalid language: %s\n", language)
+			log.Printf("invalid language: %s", language)
 		}
 	} else {
 		p.setSym("@INTERFACE", interfaceSym["NOLANGUAGE"], false)
@@ -1021,7 +1021,7 @@ func (p *parser) end() {
 		log.Println(p.struc.sprintOpen())
 	}
 	if p.proc.nest != 0 {
-		log.Printf("ignoring procedure %s without an ENDP directive\n", p.proc.name)
+		log.Printf("ignoring procedure %s without an ENDP directive", p.proc.name)
 	}
 	if len(p.syms) > 0 {
 		var keys []string

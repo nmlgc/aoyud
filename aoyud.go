@@ -292,7 +292,7 @@ func (it item) String() string {
 	var ret string
 	switch it.typ {
 	case itemLabel:
-		ret = it.sym + ":\n"
+		ret = it.sym + ":"
 	case itemInstruction:
 		if it.sym != "" {
 			ret = it.sym
@@ -301,9 +301,6 @@ func (it item) String() string {
 	}
 	if len(it.params) > 0 {
 		ret += "\t" + it.params.String()
-	}
-	if it.typ == itemInstruction {
-		ret += "\n"
 	}
 	return ret
 }
@@ -330,7 +327,7 @@ func main() {
 		p.eval(&i)
 	}
 	for _, i := range p.instructions {
-		fmt.Print(i)
+		fmt.Println(i)
 	}
 	p.end()
 }

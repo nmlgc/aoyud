@@ -195,7 +195,7 @@ func (retStack *shuntStack) pushOp(opStack *shuntStack, newOp *shuntOp) *shuntOp
 			top = opStack.pop()
 		}
 		if top == nil {
-			log.Printf("mismatched parentheses\n")
+			log.Printf("mismatched parentheses")
 		}
 		return &binaryOperators
 	case opParenL:
@@ -257,7 +257,7 @@ func (p *parser) shunt(expr string) *shuntStack {
 	for top := s.opStack.peek(); top != nil; top = s.opStack.peek() {
 		s.opStack.pop()
 		if top.(*shuntOp).id == opParenL {
-			log.Printf("missing a right parenthesis\n")
+			log.Printf("missing a right parenthesis")
 		} else {
 			s.retStack.push(top)
 		}
