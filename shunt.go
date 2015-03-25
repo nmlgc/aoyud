@@ -131,9 +131,9 @@ var asmTypes = map[string]asmInt{
 var unaryOperators = shuntOpMap{
 	"(":   {opParenL, 14, 0, nil},
 	")":   {opParenR, 14, 0, nil},
-	"+":   {opPlus, 8, 1, func(a, b *asmInt) {}},
-	"-":   {opMinus, 8, 1, func(a, b *asmInt) { a.n = -b.n }},
-	"NOT": {opNot, 4, 1, func(a, b *asmInt) { a.n = ^b.n }},
+	"+":   {opPlus, 8, 1, func(a, b *asmInt) { a.base = b.base }},
+	"-":   {opMinus, 8, 1, func(a, b *asmInt) { a.n = -b.n; a.base = b.base }},
+	"NOT": {opNot, 4, 1, func(a, b *asmInt) { a.n = ^b.n; a.base = b.base }},
 }
 
 var binaryOperators = shuntOpMap{
