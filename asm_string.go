@@ -3,7 +3,6 @@
 package main
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 )
@@ -21,11 +20,11 @@ func (v asmString) String() string {
 	return strconv.Quote(string(v))
 }
 
-func (v asmString) toInt() (asmInt, error) {
+func (v asmString) toInt() (asmInt, *ErrorList) {
 	ret := asmInt{base: 256}
 	if len(v) > maxbytes {
-		return ret, fmt.Errorf(
-			"string constant larger than %s bytes: %s", maxbytes, v,
+		return ret, ErrorListF(
+			"string constant larger than %d bytes: %s", maxbytes, v,
 		)
 	}
 	for i := 0; i < len(v); i++ {

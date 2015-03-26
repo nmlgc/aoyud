@@ -2,8 +2,6 @@
 
 package main
 
-import "log"
-
 // strucFlag denotes whether a nesting level is a structure or union.
 type strucFlag bool
 
@@ -38,9 +36,9 @@ func (v asmStruc) width() uint {
 	return 0
 }
 
-// sprintOpen returns an "open structure" error message for v and all previous
+// sprintOpen returns an "open structure" error list for v and all previous
 // nested structures.
-func (v asmStruc) sprintOpen() string {
+func (v asmStruc) sprintOpen() *ErrorList {
 	str := "open structure: "
 	if v.prev != nil {
 		str = "open structures: "
@@ -49,26 +47,26 @@ func (v asmStruc) sprintOpen() string {
 	for p := v.prev; p != nil; p = p.prev {
 		str += " <- " + p.Name()
 	}
-	return str
+	return ErrorListF(str)
 }
 
-func (p *parser) parseSTRUC(itemNum int, it *item) {
+func (p *parser) parseSTRUC(itemNum int, it *item) *ErrorList {
 	// Top-level structures require a symbol name *before* the directive.
 	// On the other hand, nested structures can *optionally* have a
 	// symbol name *after* the directive. Yes, it's stupid.
+	var err *ErrorList
 	sym := it.sym
 	if p.struc != nil {
 		if it.sym != "" {
-			log.Printf(
+			return ErrorListF(
 				"name of nested structure must come after %s: %s",
 				it.val, it.sym,
 			)
-			return
 		} else if len(it.params) > 0 {
 			sym = it.params[0]
 		}
-	} else if it.missingRequiredSym() {
-		return
+	} else if err := it.missingRequiredSym(); err != nil {
+		return err
 	}
 	struc := &asmStruc{
 		name: p.toSymCase(sym),
@@ -79,7 +77,8 @@ func (p *parser) parseSTRUC(itemNum int, it *item) {
 		struc.flag = sUnion
 	}
 	if p.struc == nil && struc.name != "" {
-		p.setSym(struc.name, struc, true)
+		err = p.setSym(struc.name, struc, true)
 	}
 	p.struc = struc
+	return err
 }

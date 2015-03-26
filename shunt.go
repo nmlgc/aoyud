@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"strings"
 )
 
@@ -40,21 +39,16 @@ const (
 )
 
 type shuntVal interface {
-	calc(retStack *shuntStack) shuntVal
+	calc(retStack *shuntStack) (shuntVal, *ErrorList)
 	fmt.Stringer
 }
 
-func (v asmInt) calc(retStack *shuntStack) shuntVal {
-	return v
+func (v asmInt) calc(retStack *shuntStack) (shuntVal, *ErrorList) {
+	return v, nil
 }
 
-func (v asmString) calc(retStack *shuntStack) shuntVal {
-	ret, err := v.toInt()
-	if err != nil {
-		log.Println(err)
-		return nil
-	}
-	return ret
+func (v asmString) calc(retStack *shuntStack) (shuntVal, *ErrorList) {
+	return v.toInt()
 }
 
 type shuntOp struct {
@@ -70,17 +64,17 @@ func (op *shuntOp) width() uint {
 	return 0
 }
 
-func (op *shuntOp) calc(retStack *shuntStack) shuntVal {
+func (op *shuntOp) calc(retStack *shuntStack) (shuntVal, *ErrorList) {
 	var args [2]asmInt
 	for i := 0; i < op.args; i++ {
-		arg := retStack.pop()
-		if arg == nil {
-			return arg
+		arg, err := retStack.pop()
+		if err != nil {
+			return arg, err
 		}
 		args[1-i] = arg.(asmInt)
 	}
 	op.function(&args[0], &args[1])
-	return args[0]
+	return args[0], nil
 }
 
 func (op *shuntOp) String() string {
@@ -101,13 +95,12 @@ func (stack *shuntStack) peek() shuntVal {
 	return nil
 }
 
-func (stack *shuntStack) pop() shuntVal {
+func (stack *shuntStack) pop() (shuntVal, *ErrorList) {
 	if ret := stack.peek(); ret != nil {
 		*stack = (*stack)[:len(*stack)-1]
-		return ret
+		return ret, nil
 	}
-	log.Println("arithmetic stack underflow")
-	return nil
+	return nil, ErrorListF("arithmetic stack underflow")
 }
 
 // Why, Go, why.
@@ -165,14 +158,14 @@ var binaryOperators = shuntOpMap{
 
 // nextShuntToken returns the next operand or operator from s. Only operators
 // in opSet are identified as such.
-func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (asmVal, error) {
+func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (asmVal, *ErrorList) {
 	token := s.nextToken(&shuntDelim)
 	if isAsmInt(token) {
 		return newAsmInt(token)
 	} else if quote := token[0]; quotes.matches(quote) && len(token) == 1 {
 		token = s.nextUntil(&charGroup{quote})
-		s.nextAssert(quote, token)
-		return asmString(token), nil
+		err := s.nextAssert(quote, token)
+		return asmString(token), err
 	}
 	tokenUpper := strings.ToUpper(token)
 	if typ, ok := asmTypes[tokenUpper]; ok {
@@ -186,18 +179,18 @@ func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (asmVal, error)
 // pushOp evaluates newOp, a newly incoming operator, in relation to the
 // previous operators on top of opStack, and returns the next set of allowed
 // operators.
-func (retStack *shuntStack) pushOp(opStack *shuntStack, newOp *shuntOp) *shuntOpMap {
+func (retStack *shuntStack) pushOp(opStack *shuntStack, newOp *shuntOp) (*shuntOpMap, *ErrorList) {
 	switch newOp.id {
 	case opParenR:
-		top := opStack.pop()
+		top, err := opStack.pop()
 		for top != nil && top.(*shuntOp).id != opParenL {
 			retStack.push(top)
-			top = opStack.pop()
+			top, err = opStack.pop()
 		}
 		if top == nil {
-			log.Printf("mismatched parentheses")
+			err = err.AddF("mismatched parentheses")
 		}
-		return &binaryOperators
+		return &binaryOperators, err
 	case opParenL:
 		opStack.push(newOp)
 	default:
@@ -206,11 +199,12 @@ func (retStack *shuntStack) pushOp(opStack *shuntStack, newOp *shuntOp) *shuntOp
 			if op.id == opParenL || newOp.precedence <= op.precedence {
 				break
 			}
-			retStack.push(opStack.pop())
+			retStack.push(op)
+			opStack.pop()
 		}
 		opStack.push(newOp)
 	}
-	return &unaryOperators
+	return &unaryOperators, nil
 }
 
 type shuntState struct {
@@ -219,8 +213,8 @@ type shuntState struct {
 	opSet    *shuntOpMap
 }
 
-func (p *parser) shuntLoop(s *shuntState, expr string) error {
-	var err error = nil
+func (p *parser) shuntLoop(s *shuntState, expr string) *ErrorList {
+	var err *ErrorList
 	var token asmVal
 	stream := newLexStream(expr)
 	for stream.peek() != eof && err == nil {
@@ -236,11 +230,11 @@ func (p *parser) shuntLoop(s *shuntState, expr string) error {
 			s.retStack.push(token.(asmString))
 			s.opSet = &binaryOperators
 		case *shuntOp:
-			s.opSet = s.retStack.pushOp(&s.opStack, token.(*shuntOp))
+			s.opSet, err = s.retStack.pushOp(&s.opStack, token.(*shuntOp))
 		case asmExpression:
 			err = p.shuntLoop(s, string(token.(asmExpression)))
 		default:
-			err = fmt.Errorf("unknown value: %s", token)
+			err = err.AddF("unknown value: %s", token)
 		}
 		stream.ignore(&whitespace)
 	}
@@ -248,52 +242,56 @@ func (p *parser) shuntLoop(s *shuntState, expr string) error {
 }
 
 // shunt converts the arithmetic expression in expr into an RPN stack.
-func (p *parser) shunt(expr string) *shuntStack {
+func (p *parser) shunt(expr string) (*shuntStack, *ErrorList) {
+	var err *ErrorList
 	s := &shuntState{opSet: &unaryOperators}
-	if err := p.shuntLoop(s, expr); err != nil {
-		log.Println(err)
-		return nil
+	if err = p.shuntLoop(s, expr); err != nil {
+		return nil, err
 	}
 	for top := s.opStack.peek(); top != nil; top = s.opStack.peek() {
 		s.opStack.pop()
 		if top.(*shuntOp).id == opParenL {
-			log.Printf("missing a right parenthesis")
+			err = err.AddF("missing a right parenthesis")
 		} else {
 			s.retStack.push(top)
 		}
 	}
-	return &s.retStack
+	return &s.retStack, err
 }
 
 // solve evaluates the RPN stack s and returns the result.
-func (s shuntStack) solve() *asmInt {
+func (s shuntStack) solve() (*asmInt, *ErrorList) {
+	var errList *ErrorList
 	retStack := make(shuntStack, 0, cap(s))
 	for _, val := range s {
-		if result := val.calc(&retStack); result != nil {
+		result, err := val.calc(&retStack)
+		if err == nil {
 			retStack.push(result)
 		}
+		errList = errList.AddL(err)
 	}
 	if len(retStack) != 1 {
-		log.Println("invalid RPN expression:", s)
-		return nil
+		return nil, errList.AddF("invalid RPN expression: %s", s)
 	}
 	result := retStack[0].(asmInt)
-	return &result
+	return &result, errList
 }
 
 // evalInt wraps shunt and solve.
-func (p *parser) evalInt(expr string) *asmInt {
-	if rpnStack := p.shunt(expr); rpnStack != nil {
+func (p *parser) evalInt(expr string) (*asmInt, *ErrorList) {
+	rpnStack, err := p.shunt(expr)
+	if err == nil {
 		return rpnStack.solve()
 	}
-	return nil
+	return nil, err
 }
 
 // evalBool wraps evalInt and casts its result to a bool.
-func (p *parser) evalBool(expr string) bool {
-	if ret := p.evalInt(expr); ret != nil {
-		return ret.n != 0
+func (p *parser) evalBool(expr string) (bool, *ErrorList) {
+	ret, err := p.evalInt(expr)
+	if err == nil {
+		return ret.n != 0, err
 	}
 	// Default to false in the case of an error... for now, at least.
-	return false
+	return false, err
 }

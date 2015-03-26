@@ -1,9 +1,5 @@
 package main
 
-import (
-	"log"
-)
-
 // lexStream provides methods to iteratively read through a byte stream using
 // delimiter characters.
 type lexStream struct {
@@ -36,14 +32,14 @@ func (s *lexStream) next() byte {
 	return ret
 }
 
-// nextAssert consumes the next byte in the input and prints an error message
-// if is not equal to b.
-func (s *lexStream) nextAssert(b byte, prev string) bool {
+// nextAssert consumes the next byte in the input and returns an error message
+// if it is not equal to b.
+func (s *lexStream) nextAssert(b byte, prev string) *ErrorList {
 	ret := s.next() == b
 	if !ret {
-		log.Printf("missing a closing %c: %s", b, prev)
+		return ErrorListF("missing a closing %c: %s", b, prev)
 	}
-	return ret
+	return nil
 }
 
 // peekUntil returns but does not consume the next word that is delimited by
@@ -75,15 +71,16 @@ func (s *lexStream) nextToken(delim *charGroup) string {
 
 // nextSegmentParam returns the next token delimited by either whitespace
 // or quotes.
-func (s *lexStream) nextSegmentParam() string {
+func (s *lexStream) nextSegmentParam() (string, *ErrorList) {
+	var err *ErrorList
 	ret := s.nextUntil(&segmentDelim)
 	if next := s.peek(); len(ret) == 0 && quotes.matches(next) {
 		nextStr := string(s.next())
 		ret = nextStr + s.nextUntil(&charGroup{next})
-		s.nextAssert(next, ret)
+		err = s.nextAssert(next, ret)
 		ret += nextStr
 	}
-	return ret
+	return ret, err
 }
 
 // nextParam consumes and returns the next parameter to an instruction, taking

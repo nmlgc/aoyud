@@ -118,9 +118,9 @@ func pReq(r int) Range {
 	return Range{r, r}
 }
 
-// checkParamRange returns true if the number of parameters in the item is
-// within the given range, and prints a log message if it isn't.
-func (it *item) checkParamRange(r Range) bool {
+// checkParamRange returns nil if the number of parameters in the item is
+// within the given range, or an error message if it isn't.
+func (it *item) checkParamRange(r Range) *ErrorList {
 	given := len(it.params)
 	below := given < r.Min
 	if below || uint(given) > uint(r.Max) {
@@ -143,9 +143,9 @@ func (it *item) checkParamRange(r Range) bool {
 				", ignoring %d additional ones: ", extra,
 			) + strings.Join(it.params[given-extra:], ", ")
 		}
-		log.Printf("%s %s", strings.ToUpper(it.val), textErr)
+		return ErrorListF("%s %s", strings.ToUpper(it.val), textErr)
 	}
-	return !below
+	return nil
 }
 
 type lexer struct {
@@ -227,9 +227,13 @@ func (l *lexer) newInstruction(sym, val string) {
 	}
 
 	l.curInst.typ = itemInstruction
-	lexFunc, ok := lexFns[strings.ToUpper(l.curInst.val)]
-	if ok && l.curInst.checkParamRange(lexFunc.paramRange) {
-		lexFunc.f(l, &l.curInst)
+
+	if lexFunc, ok := lexFns[strings.ToUpper(l.curInst.val)]; ok {
+		if err := l.curInst.checkParamRange(lexFunc.paramRange); err == nil {
+			lexFunc.f(l, &l.curInst)
+		} else {
+			log.Println(err)
+		}
 	} else if len(l.curInst.val) > 0 {
 		l.items <- l.curInst
 	}
@@ -258,26 +262,27 @@ func (l *lexer) run() {
 // readFirstFromPaths reads and returns the contents of a file with name
 // filename from the first directory in the given list that contains such a
 // file, as well as the full path to the file that was read.
-func readFirstFromPaths(filename string, paths []string) (string, string) {
+func readFirstFromPaths(filename string, paths []string) (string, string, error) {
 	for _, path := range paths {
 		fullname := filepath.Join(path, filename)
 		bytes, err := ioutil.ReadFile(fullname)
 		if err == nil {
-			return string(bytes), fullname
+			return string(bytes), fullname, nil
 		} else if !os.IsNotExist(err) {
-			log.Fatalln(err)
+			return "", "", err
 		}
 	}
-	log.Fatalf(
+	return "", "", fmt.Errorf(
 		"could not find %s in any of the source paths:\n\t%s",
 		filename, strings.Join(paths, "\n\t"),
 	)
-	return "", ""
 }
 
 func lexFile(filename string, paths []string) *lexer {
-	bytes, fullname := readFirstFromPaths(filename, paths)
-	log.SetFlags(0)
+	bytes, fullname, err := readFirstFromPaths(filename, paths)
+	if err != nil {
+		log.Fatalln(err)
+	}
 	log.SetPrefix(filename + ": ")
 	l := &lexer{
 		stream: *newLexStream(bytes),
@@ -319,6 +324,8 @@ func main() {
 	).Default(".").Short('I').Strings()
 
 	kingpin.Parse()
+
+	log.SetFlags(0)
 
 	l := lexFile(*filename, *includes)
 	p := parser{syntax: *syntax}
