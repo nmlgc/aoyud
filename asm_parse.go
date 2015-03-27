@@ -230,30 +230,30 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 	return asmMacro{args, code, locals}, err
 }
 
-// expandMacro expands the multiline macro m using the given params and calls
-// p.eval for every line in the macro. Returns false if the expansion was
-// successful, true otherwise.
-func (p *parser) expandMacro(m asmMacro, params itemParams) (bool, *ErrorList) {
+// expandMacro expands the multiline macro m using the parameters of it and
+// calls p.eval for every line in the macro. Returns false if the expansion
+// was successful, true otherwise.
+func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 	var errList *ErrorList
 	replaceMap := make(map[string]string)
 
 	setArg := func(name string, i int) (bool, *ErrorList) {
-		ret := len(params) > i && len(params[i]) > 0
+		ret := len(it.params) > i && len(it.params[i]) > 0
 		if ret {
-			if params[i][0] == '<' || params[i][0] == '%' {
-				text, err := p.text(params[i])
+			if it.params[i][0] == '<' || it.params[i][0] == '%' {
+				text, err := p.text(it.params[i])
 				if err != nil {
 					return false, err
 				}
 				replaceMap[name] = text
 			} else {
-				replaceMap[name] = params[i]
+				replaceMap[name] = it.params[i]
 			}
 		}
 		return ret, nil
 	}
 
-	replace := func(s string) string {
+	replace := func(it *item, s string) string {
 		ret := ""
 		andCached := false
 		for stream := newLexStream(s); stream.peek() != eof; {
@@ -284,7 +284,7 @@ func (p *parser) expandMacro(m asmMacro, params itemParams) (bool, *ErrorList) {
 	for i, arg := range m.args {
 		var got bool
 		if arg.typ == "REST" || arg.typ == "VARARG" {
-			replaceMap[arg.name] = params[i:].String()
+			replaceMap[arg.name] = it.params[i:].String()
 		} else {
 			var err *ErrorList
 			replaceMap[arg.name] = arg.def
@@ -304,14 +304,17 @@ func (p *parser) expandMacro(m asmMacro, params itemParams) (bool, *ErrorList) {
 		p.macroLocalCount++
 	}
 	for i := range m.code {
+		posCopy := make(ItemPos, len(it.pos), len(it.pos)+len(m.code[i].pos))
+		copy(posCopy, it.pos)
 		expanded := item{
+			pos:    append(posCopy, m.code[i].pos...),
 			typ:    m.code[i].typ,
-			sym:    replace(m.code[i].sym),
-			val:    replace(m.code[i].val),
+			sym:    replace(&m.code[i], m.code[i].sym),
+			val:    replace(&m.code[i], m.code[i].val),
 			params: make([]string, len(m.code[i].params)),
 		}
 		for p := range m.code[i].params {
-			expanded.params[p] = replace(m.code[i].params[p])
+			expanded.params[p] = replace(&m.code[i], m.code[i].params[p])
 		}
 		p.eval(&expanded)
 	}
@@ -1032,14 +1035,10 @@ func (p *parser) eval(it *item) {
 		if insSym, errSym := p.getSym(it.val); errSym == nil {
 			switch insSym.(type) {
 			case asmMacro:
-				ret, err = p.expandMacro(insSym.(asmMacro), it.params)
+				ret, err = p.expandMacro(insSym.(asmMacro), it)
 			}
 		}
-		if err != nil {
-			for _, s := range err.s {
-				log.Println(s)
-			}
-		}
+		it.pos.ErrorPrint(err)
 	}
 	if ret {
 		p.instructions = append(p.instructions, *it)
@@ -1047,6 +1046,8 @@ func (p *parser) eval(it *item) {
 }
 
 func (p *parser) end() {
+	defer log.SetPrefix(log.Prefix())
+	log.SetPrefix("")
 	if p.struc != nil {
 		log.Println(p.struc.sprintOpen())
 	}
@@ -1060,8 +1061,6 @@ func (p *parser) end() {
 		}
 		sort.Strings(keys)
 		log.Println("Symbols: [")
-		defer log.SetPrefix(log.Prefix())
-		log.SetPrefix("")
 		for _, k := range keys {
 			log.Printf("• %s: %s", k, p.syms[k])
 		}

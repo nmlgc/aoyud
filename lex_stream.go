@@ -5,6 +5,7 @@ package main
 type lexStream struct {
 	input string
 	c     int // Current character within the input string
+	line  uint
 }
 
 const eof = 0
@@ -29,6 +30,9 @@ func (s *lexStream) peek() byte {
 func (s *lexStream) next() byte {
 	ret := s.peek()
 	s.c++
+	if ret == '\n' {
+		s.line++
+	}
 	return ret
 }
 
@@ -122,5 +126,5 @@ func (s *lexStream) nextParam() string {
 }
 
 func newLexStream(input string) *lexStream {
-	return &lexStream{input: input}
+	return &lexStream{input: input, line: 1}
 }

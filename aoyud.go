@@ -85,6 +85,28 @@ func (g *keywordGroup) matches(word string) bool {
 	return false
 }
 
+type SourcePos struct {
+	filename *string
+	line     uint
+}
+
+func (p SourcePos) String() string {
+	return fmt.Sprintf("%s(%d):", *p.filename, p.line)
+}
+
+type ItemPos []SourcePos
+
+func (p ItemPos) String() string {
+	ret := ""
+	for i, pos := range p {
+		if i != 0 {
+			ret += "\n" + strings.Repeat(" ", i)
+		}
+		ret += pos.String()
+	}
+	return ret + " "
+}
+
 type itemParams []string
 
 func (p itemParams) String() string {
@@ -93,6 +115,7 @@ func (p itemParams) String() string {
 
 // item represents a token or text string returned from the scanner.
 type item struct {
+	pos    ItemPos    // Code position of this item and the macros it came from.
 	typ    itemType   // The type of this item
 	sym    string     // Optional symbol name
 	val    string     // Name of the instruction or label. Limited to ASCII characters.
@@ -149,10 +172,11 @@ func (it *item) checkParamRange(r Range) *ErrorList {
 }
 
 type lexer struct {
-	stream  lexStream
-	paths   []string  // search paths for relative includes
-	curInst item      // current instruction being built
-	items   chan item // channel of scanned items
+	stream   lexStream
+	filename *string
+	paths    []string  // search paths for relative includes
+	curInst  item      // current instruction being built
+	items    chan item // channel of scanned items
 }
 
 type stateFn func(*lexer) stateFn
@@ -160,17 +184,20 @@ type stateFn func(*lexer) stateFn
 // lexFn represents a function handling a certain instruction or directive
 // at lexing time.
 type lexFn struct {
-	f          func(l *lexer, it *item)
+	f          func(l *lexer, it *item) *ErrorList
 	paramRange Range
 }
 
-func (l *lexer) lexINCLUDE(it *item) {
+func (l *lexer) lexINCLUDE(it *item) *ErrorList {
 	// Remember to restore the old filename once we're done with this one
-	defer log.SetPrefix(log.Prefix())
-	newL := lexFile(it.params[0], l.paths)
+	newL, err := lexFile(it.params[0], l.paths)
+	if err != nil {
+		return err
+	}
 	for i := range newL.items {
 		l.items <- i
 	}
+	return nil
 }
 
 // lexFirst scans labels, the symbol declaration, and the name of the
@@ -180,7 +207,7 @@ func lexFirst(l *lexer) stateFn {
 	// Label?
 	if l.stream.peek() == ':' {
 		l.stream.next()
-		l.emitItem(item{typ: itemLabel, sym: first})
+		l.emitItem(&item{typ: itemLabel, sym: first})
 		return lexFirst
 	}
 	// Assignment? (Needs to be a special case because = doesn't need to be
@@ -219,35 +246,45 @@ func lexParam(l *lexer) stateFn {
 	return lexParam
 }
 
-// emitInstruction emits the currently cached instruction.
+// newInstruction emits the currently cached instruction and starts a new one
+// with the given symbol and value.
 func (l *lexer) newInstruction(sym, val string) {
 	// Nope, turning this global would result in an initialization loop.
 	var lexFns = map[string]lexFn{
 		"INCLUDE": {(*lexer).lexINCLUDE, pReq(1)},
 	}
+	var err *ErrorList
 
 	l.curInst.typ = itemInstruction
 
 	if lexFunc, ok := lexFns[strings.ToUpper(l.curInst.val)]; ok {
-		if err := l.curInst.checkParamRange(lexFunc.paramRange); err == nil {
-			lexFunc.f(l, &l.curInst)
-		} else {
-			log.Println(err)
+		if err = l.curInst.checkParamRange(lexFunc.paramRange); err == nil {
+			err = lexFunc.f(l, &l.curInst)
 		}
-	} else if len(l.curInst.val) > 0 {
-		l.items <- l.curInst
+	} else {
+		l.emit(&l.curInst)
+	}
+	if err != nil {
+		l.curInst.pos[0].line = l.stream.line
+		l.curInst.pos.ErrorFatal(err)
 	}
 	l.curInst.sym = sym
 	l.curInst.val = val
 	l.curInst.params = nil
 }
 
-// emitItem emits the currently cached instruction, followed by the given item.
-func (l *lexer) emitItem(it item) {
-	l.newInstruction("", "")
+// emit sets the position of the given item and sends it over the items channel.
+func (l *lexer) emit(it *item) {
 	if len(it.val) > 0 || len(it.sym) > 0 {
-		l.items <- it
+		it.pos = ItemPos{SourcePos{filename: l.filename, line: l.stream.line}}
+		l.items <- *it
 	}
+}
+
+// emitItem emits the currently cached instruction, followed by the given item.
+func (l *lexer) emitItem(it *item) {
+	l.newInstruction("", "")
+	l.emit(it)
 }
 
 // run runs the state machine for the lexer.
@@ -261,36 +298,37 @@ func (l *lexer) run() {
 
 // readFirstFromPaths reads and returns the contents of a file with name
 // filename from the first directory in the given list that contains such a
-// file, as well as the full path to the file that was read.
-func readFirstFromPaths(filename string, paths []string) (string, string, error) {
+// file, the full path to the file that was read, as well as any error that
+// occurred.
+func readFirstFromPaths(filename string, paths []string) (string, string, *ErrorList) {
 	for _, path := range paths {
 		fullname := filepath.Join(path, filename)
 		bytes, err := ioutil.ReadFile(fullname)
 		if err == nil {
 			return string(bytes), fullname, nil
 		} else if !os.IsNotExist(err) {
-			return "", "", err
+			return "", "", NewErrorList(err)
 		}
 	}
-	return "", "", fmt.Errorf(
+	return "", "", ErrorListF(
 		"could not find %s in any of the source paths:\n\t%s",
 		filename, strings.Join(paths, "\n\t"),
 	)
 }
 
-func lexFile(filename string, paths []string) *lexer {
+func lexFile(filename string, paths []string) (*lexer, *ErrorList) {
 	bytes, fullname, err := readFirstFromPaths(filename, paths)
 	if err != nil {
-		log.Fatalln(err)
+		return nil, err
 	}
-	log.SetPrefix(filename + ": ")
 	l := &lexer{
-		stream: *newLexStream(bytes),
-		items:  make(chan item),
-		paths:  append(paths, filepath.Dir(fullname)),
+		filename: &filename,
+		stream:   *newLexStream(bytes),
+		items:    make(chan item),
+		paths:    append(paths, filepath.Dir(fullname)),
 	}
 	go l.run()
-	return l
+	return l, nil
 }
 
 func (it item) String() string {
@@ -327,7 +365,10 @@ func main() {
 
 	log.SetFlags(0)
 
-	l := lexFile(*filename, *includes)
+	l, err := lexFile(*filename, *includes)
+	if err != nil {
+		log.Fatalln(err)
+	}
 	p := parser{syntax: *syntax}
 
 	for i := range l.items {
