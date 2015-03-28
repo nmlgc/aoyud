@@ -175,12 +175,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 		args[i].name = p.toSymCase(nameOrg)
 		args[i].typ = strings.ToUpper(typOrg)
 		// Verify types
-		switch args[i].typ {
-		case "":
-		case "REQ":
-			break
-		case "REST":
-		case "VARARG":
+		if args[i].typ == "REST" || args[i].typ == "VARARG" {
 			if i != len(header.params)-1 {
 				// TASM would actually accept this, but we better
 				// complain since it doesn't make sense at all.
@@ -189,7 +184,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 					p.macro.name, args[i].name, args[i].typ,
 				)
 			}
-		default:
+		} else if !(args[i].typ == "" || args[i].typ == "REQ") {
 			if typOrg[0] == '=' {
 				def, err := p.text(strings.TrimSpace(typOrg[1:]))
 				if err != nil {
