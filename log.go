@@ -14,8 +14,12 @@ var codeLogger = log.New(os.Stderr, "", 0)
 
 func (p *ItemPos) callPrintln(fn printlnFn, err *ErrorList) {
 	if err != nil {
-		for _, s := range err.s {
-			fn(codeLogger, p.String()+s)
+		for _, e := range *err {
+			if e.pos != nil {
+				fn(codeLogger, e.pos.String()+e.s)
+			} else {
+				fn(codeLogger, p.String()+e.s)
+			}
 		}
 	}
 }

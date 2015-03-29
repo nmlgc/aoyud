@@ -179,9 +179,9 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 			if i != len(header.params)-1 {
 				// TASM would actually accept this, but we better
 				// complain since it doesn't make sense at all.
-				return asmMacro{}, ErrorListF(
-					"macro %s: %s:%s must be the last parameter",
-					p.macro.name, args[i].name, args[i].typ,
+				return asmMacro{}, ErrorListFAt(&header.pos,
+					"%s:%s must be the last parameter",
+					args[i].name, args[i].typ,
 				)
 			}
 		} else if !(args[i].typ == "" || args[i].typ == "REQ") {
@@ -193,9 +193,8 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 				args[i].typ = "="
 				args[i].def = def
 			} else {
-				return asmMacro{}, ErrorListF(
-					"macro %s: invalid argument type: %s",
-					p.macro.name, args[i].typ,
+				return asmMacro{}, ErrorListFAt(&header.pos,
+					"invalid macro argument type: %s", args[i].typ,
 				)
 			}
 		}
@@ -213,7 +212,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 				code = code[i+1:]
 				i--
 			} else {
-				err = err.AddF(
+				err = err.AddFAt(&code[i].pos,
 					"LOCAL directives must come first in a macro body, ignoring: %s",
 					code[i].params.String(),
 				)
