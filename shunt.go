@@ -173,7 +173,7 @@ func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (asmVal, *Error
 	} else if nextOp, ok := (*opSet)[tokenUpper]; ok {
 		return &nextOp, nil
 	}
-	return p.getSym(p.toSymCase(token))
+	return p.getSym(token)
 }
 
 // pushOp evaluates newOp, a newly incoming operator, in relation to the

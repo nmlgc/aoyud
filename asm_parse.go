@@ -286,10 +286,13 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 			errList = errList.AddL(err)
 		}
 		if arg.typ == "REQ" && !got {
-			return true, errList.AddF(
+			errList = errList.AddF(
 				"macro argument #%d (%s) is required", i+1, arg.name,
 			)
 		}
+	}
+	if errList != nil && len(*errList) != 0 {
+		return true, errList
 	}
 	for _, local := range m.locals {
 		// Who knows, some code might actually rely on the resulting
@@ -972,10 +975,11 @@ var parseFns = map[string]parseFn{
 // getSym returns the value of a symbol that is meant to exist in the map, or
 // an error if it doesn't.
 func (p *parser) getSym(name string) (asmVal, *ErrorList) {
-	if ret, ok := p.syms[p.toSymCase(name)]; ok {
+	realName := p.toSymCase(name)
+	if ret, ok := p.syms[realName]; ok {
 		return ret.val, nil
 	}
-	return nil, ErrorListF("unknown symbol %s", name)
+	return nil, ErrorListF("unknown symbol %s", realName)
 }
 
 func (p *parser) setSym(name string, val asmVal, constant bool) *ErrorList {
