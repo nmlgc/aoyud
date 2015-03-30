@@ -12,6 +12,10 @@ type asmString string
 
 const maxbytes = 8
 
+func (v asmString) Thing() string {
+	return "string constant"
+}
+
 func (v asmString) width() uint {
 	return uint(len(v))
 }

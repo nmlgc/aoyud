@@ -11,7 +11,8 @@ import (
 )
 
 type asmVal interface {
-	width() uint // Returns the width in bytes of the data value
+	Thing() string // Returns a singular noun describing this type of value
+	width() uint   // Returns the width in bytes of the data value
 	fmt.Stringer
 }
 
@@ -20,6 +21,10 @@ type asmInt struct {
 	n    int64  // The value itself
 	ptr  uint64 // Nonzero values turn the integer into a pointer of this length
 	base int
+}
+
+func (v asmInt) Thing() string {
+	return "integer constant"
 }
 
 func (v asmInt) width() uint {
@@ -111,6 +116,10 @@ func newAsmInt(input string) (asmInt, *ErrorList) {
 // asmExpression represents an evaluable expression string.
 type asmExpression string
 
+func (v asmExpression) Thing() string {
+	return "arithmetic expression"
+}
+
 func (v asmExpression) width() uint {
 	return uint(len(v))
 }
@@ -140,6 +149,10 @@ type asmMacro struct {
 	args   []asmMacroArg
 	code   []item
 	locals itemParams
+}
+
+func (v asmMacro) Thing() string {
+	return "multiline macro"
 }
 
 func (v asmMacro) width() uint {
@@ -541,10 +554,10 @@ func (p *parser) text(s string) (string, *ErrorList) {
 			return strconv.FormatInt(sym.(asmInt).n, 10), nil
 		case asmExpression:
 			return string(sym.(asmExpression)), nil
-		case asmMacro:
-			return "", ErrorListF("can't use macro name in expression: %s", name)
 		default:
-			return "", ErrorListF("invalid symbol type in expression: %s", sym)
+			return "", ErrorListF(
+				"can't use %s as a text string: %s", sym.Thing(), name,
+			)
 		}
 	}
 	return fail()

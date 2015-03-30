@@ -25,6 +25,10 @@ type asmDataPtr struct {
 	w   uint
 }
 
+func (p asmDataPtr) Thing() string {
+	return "data pointer"
+}
+
 func (p asmDataPtr) String() string {
 	var offChars int = int(p.seg.wordsize * 2)
 	var offStr string
@@ -45,6 +49,10 @@ type asmSegment struct {
 	chunks   []asmDataChunk
 	wordsize uint
 	prev     *asmSegment // in order to easily handle nested segments
+}
+
+func (s asmSegment) Thing() string {
+	return "segment name"
 }
 
 func (s asmSegment) String() string {

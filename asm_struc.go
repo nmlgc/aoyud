@@ -16,6 +16,13 @@ type asmStruc struct {
 	prev *asmStruc
 }
 
+func (v asmStruc) Thing() string {
+	if v.flag == sUnion {
+		return "union"
+	}
+	return "structure"
+}
+
 // Name returns a friendly name of v.
 func (v asmStruc) Name() string {
 	if v.name == "" {
@@ -25,11 +32,10 @@ func (v asmStruc) Name() string {
 }
 
 func (v asmStruc) String() string {
-	typ := "STRUC"
 	if v.flag == sUnion {
-		typ = "UNION"
+		return "UNION"
 	}
-	return typ
+	return "STRUC"
 }
 
 func (v asmStruc) width() uint {

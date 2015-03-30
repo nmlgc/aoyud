@@ -60,6 +60,10 @@ type shuntOp struct {
 	function func(a, b *asmInt)
 }
 
+func (op *shuntOp) Thing() string {
+	return "arithmetic operator"
+}
+
 func (op *shuntOp) width() uint {
 	return 0
 }
@@ -234,7 +238,9 @@ func (p *parser) shuntLoop(s *shuntState, expr string) *ErrorList {
 		case asmExpression:
 			err = p.shuntLoop(s, string(token.(asmExpression)))
 		default:
-			err = err.AddF("unknown value: %s", token)
+			err = err.AddF(
+				"can't use %s in arithmetic expression", token.Thing(),
+			)
 		}
 		stream.ignore(&whitespace)
 	}
