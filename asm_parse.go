@@ -16,6 +16,19 @@ type asmVal interface {
 	fmt.Stringer
 }
 
+type Nestable interface {
+	asmVal
+	// Returns "open <type of block>".
+	OpenThing() string
+	// Returns "open <types of block>".
+	OpenThings() string
+	// Returns a friendly name of the current block.
+	Name() string
+	// Returns a pointer to the block at the previous nesting level or an
+	// explicit nil if no more nested blocks are left.
+	Prev() Nestable
+}
+
 // asmInt represents an integer that will be output in a defined base.
 type asmInt struct {
 	n    int64  // The value itself
@@ -346,11 +359,25 @@ func (s symbol) String() string {
 
 type symMap map[string]symbol
 
-// nestableBlock represents a type of named block that can be nested.
-type nestableBlock struct {
+// NestInfo represents a type of named block that can be nested.
+type NestInfo struct {
 	name  string // Name of level 1
 	start int    // First item in the instruction list that belongs to level 1
 	nest  int    // Current nesting level
+}
+
+// ErrorListOpen returns an "open block" error list for block and all previous
+// nested blocks.
+func ErrorListOpen(block Nestable) *ErrorList {
+	str := block.OpenThing() + ": "
+	if block.Prev() != nil {
+		str = block.OpenThings() + ": "
+	}
+	str += block.Name()
+	for block := block.Prev(); block != nil; block = block.Prev() {
+		str += " ← " + block.Name()
+	}
+	return ErrorListF(str)
 }
 
 type parser struct {
@@ -361,10 +388,11 @@ type parser struct {
 	symCase         bool // case sensitivity for symbols
 	macroLocalCount int  // Number of LOCAL directives expanded
 	// Open blocks
-	proc  nestableBlock
-	macro nestableBlock
-	struc *asmStruc
-	seg   *asmSegment
+	proc    NestInfo
+	macro   NestInfo
+	struc   *asmStruc
+	seg     *asmSegment
+	segNest int // Tracks the number of open SEGMENT blocks
 	// Conditionals
 	ifNest  int  // IF nesting level
 	ifMatch int  // Last IF nesting level that evaluated to true
@@ -852,6 +880,7 @@ func (p *parser) parseSEGMENT(itemNum int, it *item) *ErrorList {
 	}
 	seg.prev = p.seg
 	p.seg = seg
+	p.segNest++
 	return errList.AddL(p.setSym(sym, seg, false))
 }
 
@@ -860,10 +889,11 @@ func (p *parser) parseENDS(itemNum int, it *item) *ErrorList {
 	if p.seg != nil && p.seg.name == sym {
 		var err *ErrorList
 		if p.struc != nil {
-			err = p.struc.sprintOpen()
+			err = ErrorListOpen(p.struc)
 			p.struc = nil
 		}
 		p.seg = p.seg.prev
+		p.segNest--
 		return err
 	} else if p.struc != nil {
 		// See parseSTRUC for an explanation of this stupidity
@@ -1058,9 +1088,19 @@ func (p *parser) eval(it *item) {
 
 func (p *parser) end() {
 	defer log.SetPrefix(log.Prefix())
-	log.SetPrefix("")
+	log.SetPrefix("(EOF): ")
+
+	var err *ErrorList
 	if p.struc != nil {
-		log.Println(p.struc.sprintOpen())
+		err = err.AddL(ErrorListOpen(p.struc))
+	}
+	if p.segNest != 0 {
+		err = err.AddL(ErrorListOpen(p.seg))
+	}
+	if err != nil {
+		for _, e := range *err {
+			log.Println(e.s)
+		}
 	}
 	if p.proc.nest != 0 {
 		log.Printf("ignoring procedure %s without an ENDP directive", p.proc.name)
@@ -1072,6 +1112,7 @@ func (p *parser) end() {
 		}
 		sort.Strings(keys)
 		log.Println("Symbols: [")
+		log.SetPrefix("")
 		for _, k := range keys {
 			log.Printf("• %s: %s", k, p.syms[k])
 		}

@@ -51,8 +51,16 @@ type asmSegment struct {
 	prev     *asmSegment // in order to easily handle nested segments
 }
 
-func (s asmSegment) Thing() string {
-	return "segment name"
+func (s asmSegment) Thing() string      { return "segment name" }
+func (s asmSegment) OpenThing() string  { return "open segment" }
+func (s asmSegment) OpenThings() string { return "open segments" }
+func (s asmSegment) Name() string       { return s.name }
+
+func (s asmSegment) Prev() Nestable {
+	if s.prev != nil {
+		return s.prev
+	}
+	return nil
 }
 
 func (s asmSegment) String() string {

@@ -23,7 +23,16 @@ func (v asmStruc) Thing() string {
 	return "structure"
 }
 
-// Name returns a friendly name of v.
+func (v asmStruc) OpenThing() string  { return "open structure" }
+func (v asmStruc) OpenThings() string { return "open structures" }
+
+func (v asmStruc) Prev() Nestable {
+	if v.prev != nil {
+		return v.prev
+	}
+	return nil
+}
+
 func (v asmStruc) Name() string {
 	if v.name == "" {
 		return "(unnamed)"
@@ -40,20 +49,6 @@ func (v asmStruc) String() string {
 
 func (v asmStruc) width() uint {
 	return 0
-}
-
-// sprintOpen returns an "open structure" error list for v and all previous
-// nested structures.
-func (v asmStruc) sprintOpen() *ErrorList {
-	str := "open structure: "
-	if v.prev != nil {
-		str = "open structures: "
-	}
-	str += v.Name()
-	for p := v.prev; p != nil; p = p.prev {
-		str += " <- " + p.Name()
-	}
-	return ErrorListF(str)
 }
 
 func (p *parser) parseSTRUC(itemNum int, it *item) *ErrorList {
