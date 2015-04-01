@@ -518,8 +518,12 @@ func (p *parser) parseMODEL(itemNum int, it *item) *ErrorList {
 	paramCount := len(it.params)
 	model := strings.ToUpper(it.params[0])
 	if m, ok := modelValMap[model]; ok {
-		if p.syntax == "MASM" && model == "FLAT" {
-			m.model = 7
+		if model == "FLAT" {
+			if p.syms["@CPU"].val.(asmInt).n&cpu386 == 0 {
+				return err.AddF("FLAT model requires at least a .386 CPU")
+			} else if p.syntax == "MASM" {
+				m.model = 7
+			}
 		}
 		err = err.AddL(p.setSym("@MODEL", asmInt{n: m.model}, false))
 		err = err.AddL(p.setSym("@CODESIZE", asmInt{n: m.codesize}, false))
@@ -847,6 +851,7 @@ func (p *parser) parseCPU(itemNum int, it *item) *ErrorList {
 }
 
 func (p *parser) parseSEGMENT(itemNum int, it *item) *ErrorList {
+	cpuWordSize := uint(p.syms["@WORDSIZE"].val.(asmInt).n) // can never fail
 	sym := p.toSymCase(it.sym)
 	seg := &asmSegment{}
 	var errList *ErrorList
@@ -865,8 +870,7 @@ func (p *parser) parseSEGMENT(itemNum int, it *item) *ErrorList {
 			)
 		}
 	} else {
-		wordsize, _ := p.getSym("@WORDSIZE") // can never fail
-		seg.wordsize = uint(wordsize.(asmInt).n)
+		seg.wordsize = cpuWordSize
 		seg.name = sym
 	}
 	if len(it.params) > 0 {
@@ -876,6 +880,14 @@ func (p *parser) parseSEGMENT(itemNum int, it *item) *ErrorList {
 			if attrib, ok := attributes[strings.ToUpper(param)]; ok {
 				attrib()
 			}
+		}
+	}
+	if seg.wordsize > cpuWordSize {
+		switch seg.wordsize {
+		case 4:
+			return errList.AddF("32-bit segments require at least a .386 CPU setting")
+		case 8:
+			return errList.AddF("64-bit segments require at least a .X64 CPU setting")
 		}
 	}
 	seg.prev = p.seg
