@@ -188,7 +188,7 @@ type lexFn struct {
 	paramRange Range
 }
 
-func (l *lexer) lexINCLUDE(it *item) *ErrorList {
+func INCLUDE(l *lexer, it *item) *ErrorList {
 	// Remember to restore the old filename once we're done with this one
 	newL, err := lexFile(it.params[0], l.paths)
 	if err != nil {
@@ -251,7 +251,7 @@ func lexParam(l *lexer) stateFn {
 func (l *lexer) newInstruction(sym, val string) {
 	// Nope, turning this global would result in an initialization loop.
 	var lexFns = map[string]lexFn{
-		"INCLUDE": {(*lexer).lexINCLUDE, pReq(1)},
+		"INCLUDE": {INCLUDE, pReq(1)},
 	}
 	var err *ErrorList
 

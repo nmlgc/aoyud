@@ -51,7 +51,7 @@ func (v asmStruc) width() uint {
 	return 0
 }
 
-func (p *parser) parseSTRUC(itemNum int, it *item) *ErrorList {
+func STRUC(p *parser, itemNum int, it *item) *ErrorList {
 	// Top-level structures require a symbol name *before* the directive.
 	// On the other hand, nested structures can *optionally* have a
 	// symbol name *after* the directive. Yes, it's stupid.

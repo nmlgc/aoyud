@@ -453,7 +453,7 @@ type parseFn struct {
 	paramRange Range
 }
 
-func (p *parser) parsePROC(itemNum int, it *item) *ErrorList {
+func PROC(p *parser, itemNum int, it *item) *ErrorList {
 	var err *ErrorList
 	if p.proc.nest == 0 {
 		p.proc.name = it.sym
@@ -465,7 +465,7 @@ func (p *parser) parsePROC(itemNum int, it *item) *ErrorList {
 	return err
 }
 
-func (p *parser) parseENDP(itemNum int, it *item) *ErrorList {
+func ENDP(p *parser, itemNum int, it *item) *ErrorList {
 	var err *ErrorList
 	if p.proc.nest == 0 {
 		return ErrorListF(
@@ -481,7 +481,7 @@ func (p *parser) parseENDP(itemNum int, it *item) *ErrorList {
 	return err
 }
 
-func (p *parser) parseMODEL(itemNum int, it *item) *ErrorList {
+func MODEL(p *parser, itemNum int, it *item) *ErrorList {
 	var err *ErrorList
 	type modelVals struct {
 		model, codesize, datasize int64
@@ -544,7 +544,7 @@ func (p *parser) parseMODEL(itemNum int, it *item) *ErrorList {
 	return err
 }
 
-func (p *parser) parseEQUALS(itemNum int, it *item) *ErrorList {
+func EQUALS(p *parser, itemNum int, it *item) *ErrorList {
 	ret, err := p.evalInt(it.params[0])
 	if err == nil {
 		return p.setSym(it.sym, *ret, false)
@@ -552,7 +552,7 @@ func (p *parser) parseEQUALS(itemNum int, it *item) *ErrorList {
 	return err
 }
 
-func (p *parser) parseEQU(itemNum int, it *item) *ErrorList {
+func EQU(p *parser, itemNum int, it *item) *ErrorList {
 	return p.setSym(it.sym, asmExpression(it.params[0]), true)
 }
 
@@ -649,19 +649,19 @@ var ifidnModeMap = map[string]ifidnMode{
 	"IFDIFI": {compareFn: (*parser).isEqualFold, identical: false},
 }
 
-func (p *parser) parseIFDEF(itemNum int, it *item) *ErrorList {
+func IFDEF(p *parser, itemNum int, it *item) *ErrorList {
 	_, defined := p.syms[p.toSymCase(it.params[0])]
 	mode := it.val == "IFDEF"
 	return p.evalIf(defined == mode)
 }
 
-func (p *parser) parseIF(itemNum int, it *item) *ErrorList {
+func IF(p *parser, itemNum int, it *item) *ErrorList {
 	mode := it.val == "IF"
 	ret, err := p.evalBool(it.params[0])
 	return err.AddL(p.evalIf(ret == mode))
 }
 
-func (p *parser) parseIFB(itemNum int, it *item) *ErrorList {
+func IFB(p *parser, itemNum int, it *item) *ErrorList {
 	mode := it.val == "IFB"
 	ret, err := p.isBlank(it.params[0])
 	if err != nil {
@@ -670,7 +670,7 @@ func (p *parser) parseIFB(itemNum int, it *item) *ErrorList {
 	return p.evalIf(ret == mode)
 }
 
-func (p *parser) parseIFIDN(itemNum int, it *item) *ErrorList {
+func IFIDN(p *parser, itemNum int, it *item) *ErrorList {
 	mode := ifidnModeMap[it.val]
 	ret, err := mode.compareFn(p, it.params[0], it.params[1])
 	if err != nil {
@@ -679,19 +679,19 @@ func (p *parser) parseIFIDN(itemNum int, it *item) *ErrorList {
 	return p.evalIf(ret == mode.identical)
 }
 
-func (p *parser) parseELSEIFDEF(itemNum int, it *item) *ErrorList {
+func ELSEIFDEF(p *parser, itemNum int, it *item) *ErrorList {
 	_, defined := p.syms[p.toSymCase(it.params[0])]
 	mode := it.val == "ELSEIFDEF"
 	return p.evalElseif(it.val, defined == mode)
 }
 
-func (p *parser) parseELSEIF(itemNum int, it *item) *ErrorList {
+func ELSEIF(p *parser, itemNum int, it *item) *ErrorList {
 	mode := it.val == "ELSEIF"
 	ret, err := p.evalBool(it.params[0])
 	return err.AddL(p.evalElseif(it.val, ret == mode))
 }
 
-func (p *parser) parseELSEIFB(itemNum int, it *item) *ErrorList {
+func ELSEIFB(p *parser, itemNum int, it *item) *ErrorList {
 	ret, err := p.isBlank(it.params[0])
 	if err != nil {
 		return err
@@ -700,7 +700,7 @@ func (p *parser) parseELSEIFB(itemNum int, it *item) *ErrorList {
 	return p.evalElseif(it.val, ret == mode)
 }
 
-func (p *parser) parseELSEIFIDN(itemNum int, it *item) *ErrorList {
+func ELSEIFIDN(p *parser, itemNum int, it *item) *ErrorList {
 	mode := ifidnModeMap[it.val[4:]]
 	ret, err := mode.compareFn(p, it.params[0], it.params[1])
 	if err != nil {
@@ -709,11 +709,11 @@ func (p *parser) parseELSEIFIDN(itemNum int, it *item) *ErrorList {
 	return p.evalElseif(it.val, ret == mode.identical)
 }
 
-func (p *parser) parseELSE(itemNum int, it *item) *ErrorList {
+func ELSE(p *parser, itemNum int, it *item) *ErrorList {
 	return p.evalElseif("ELSE", true)
 }
 
-func (p *parser) parseENDIF(itemNum int, it *item) *ErrorList {
+func ENDIF(p *parser, itemNum int, it *item) *ErrorList {
 	if p.ifNest == 0 {
 		return ErrorListF("found ENDIF without a matching condition")
 	}
@@ -725,7 +725,7 @@ func (p *parser) parseENDIF(itemNum int, it *item) *ErrorList {
 	return nil
 }
 
-func (p *parser) parseOPTION(itemNum int, it *item) *ErrorList {
+func OPTION(p *parser, itemNum int, it *item) *ErrorList {
 	var options = map[string](map[string]func()){
 		"CASEMAP": {
 			"NONE":      func() { p.symCase = true },
@@ -748,7 +748,7 @@ func (p *parser) parseOPTION(itemNum int, it *item) *ErrorList {
 	return nil
 }
 
-func (p *parser) parseMACRO(itemNum int, it *item) *ErrorList {
+func MACRO(p *parser, itemNum int, it *item) *ErrorList {
 	if p.macro.nest == 0 {
 		p.macro.name = it.sym
 		p.macro.start = itemNum
@@ -757,7 +757,7 @@ func (p *parser) parseMACRO(itemNum int, it *item) *ErrorList {
 	return nil
 }
 
-func (p *parser) parseENDM(itemNum int, it *item) *ErrorList {
+func ENDM(p *parser, itemNum int, it *item) *ErrorList {
 	var macro asmMacro
 	var err *ErrorList
 	if p.macro.nest == 1 && p.macro.name != "" {
@@ -772,7 +772,7 @@ func (p *parser) parseENDM(itemNum int, it *item) *ErrorList {
 }
 
 // Placeholder for any non-MACRO block terminated with ENDM
-func (p *parser) parseDummyMacro(itemNum int, it *item) *ErrorList {
+func DummyMacro(p *parser, itemNum int, it *item) *ErrorList {
 	p.macro.nest++
 	return nil
 }
@@ -845,12 +845,12 @@ func (p *parser) setCPU(directive string) *ErrorList {
 	return err
 }
 
-func (p *parser) parseCPU(itemNum int, it *item) *ErrorList {
+func CPU(p *parser, itemNum int, it *item) *ErrorList {
 	// No difference between P or . as the first character, so...
 	return p.setCPU(it.val[1:])
 }
 
-func (p *parser) parseSEGMENT(itemNum int, it *item) *ErrorList {
+func SEGMENT(p *parser, itemNum int, it *item) *ErrorList {
 	cpuWordSize := uint(p.syms["@WORDSIZE"].val.(asmInt).n) // can never fail
 	sym := p.toSymCase(it.sym)
 	seg := &asmSegment{}
@@ -896,7 +896,7 @@ func (p *parser) parseSEGMENT(itemNum int, it *item) *ErrorList {
 	return errList.AddL(p.setSym(sym, seg, false))
 }
 
-func (p *parser) parseENDS(itemNum int, it *item) *ErrorList {
+func ENDS(p *parser, itemNum int, it *item) *ErrorList {
 	sym := p.toSymCase(it.sym)
 	if p.seg != nil && p.seg.name == sym {
 		var err *ErrorList
@@ -921,7 +921,7 @@ func (p *parser) parseENDS(itemNum int, it *item) *ErrorList {
 	return ErrorListF("unmatched ENDS: %s", sym)
 }
 
-func (p *parser) parseDATA(itemNum int, it *item) *ErrorList {
+func DATA(p *parser, itemNum int, it *item) *ErrorList {
 	var widthMap = map[string]uint{
 		"DB": 1, "DW": 2, "DD": 4, "DF": 6, "DP": 6, "DQ": 8, "DT": 10,
 	}
@@ -932,7 +932,7 @@ func (p *parser) parseDATA(itemNum int, it *item) *ErrorList {
 	return nil
 }
 
-func (p *parser) parseLABEL(itemNum int, it *item) *ErrorList {
+func LABEL(p *parser, itemNum int, it *item) *ErrorList {
 	size, err := p.evalInt(it.params[0])
 	if size != nil && p.seg != nil {
 		ptr := asmDataPtr{seg: p.seg, off: -1, w: uint(size.n)}
@@ -941,47 +941,47 @@ func (p *parser) parseLABEL(itemNum int, it *item) *ErrorList {
 	return err
 }
 
-var cpuFn = parseFn{(*parser).parseCPU, 0, pReq(0)}
+var cpuFn = parseFn{CPU, 0, pReq(0)}
 
 var parseFns = map[string]parseFn{
-	"PROC":       {(*parser).parsePROC, typeDeclarator | typeCodeBlock, Range{0, -1}},
-	"ENDP":       {(*parser).parseENDP, typeCodeBlock, pReq(0)},
-	".MODEL":     {(*parser).parseMODEL, typeCodeBlock, Range{1, 6}},
-	"=":          {(*parser).parseEQUALS, typeDeclarator, pReq(1)},
-	"EQU":        {(*parser).parseEQU, typeDeclarator, Range{1, -1}},
-	"IFDEF":      {(*parser).parseIFDEF, typeConditional, pReq(1)},
-	"IFNDEF":     {(*parser).parseIFDEF, typeConditional, pReq(1)},
-	"IF":         {(*parser).parseIF, typeConditional, pReq(1)},
-	"IFE":        {(*parser).parseIF, typeConditional, pReq(1)},
-	"IFB":        {(*parser).parseIFB, typeConditional, pReq(1)},
-	"IFNB":       {(*parser).parseIFB, typeConditional, pReq(1)},
-	"IFIDN":      {(*parser).parseIFIDN, typeConditional, pReq(2)},
-	"IFIDNI":     {(*parser).parseIFIDN, typeConditional, pReq(2)},
-	"IFDIF":      {(*parser).parseIFIDN, typeConditional, pReq(2)},
-	"IFDIFI":     {(*parser).parseIFIDN, typeConditional, pReq(2)},
-	"ELSEIFDEF":  {(*parser).parseELSEIFDEF, typeConditional, pReq(1)},
-	"ELSEIFNDEF": {(*parser).parseELSEIFDEF, typeConditional, pReq(1)},
-	"ELSEIF":     {(*parser).parseELSEIF, typeConditional, pReq(1)},
-	"ELSEIFE":    {(*parser).parseELSEIF, typeConditional, pReq(1)},
-	"ELSEIFB":    {(*parser).parseELSEIFB, typeConditional, pReq(1)},
-	"ELSEIFNB":   {(*parser).parseELSEIFB, typeConditional, pReq(1)},
-	"ELSEIFIDN":  {(*parser).parseELSEIFIDN, typeConditional, pReq(2)},
-	"ELSEIFIDNI": {(*parser).parseELSEIFIDN, typeConditional, pReq(2)},
-	"ELSEIFDIF":  {(*parser).parseELSEIFIDN, typeConditional, pReq(2)},
-	"ELSEIFDIFI": {(*parser).parseELSEIFIDN, typeConditional, pReq(2)},
-	"ELSE":       {(*parser).parseELSE, typeConditional, pReq(0)},
-	"ENDIF":      {(*parser).parseENDIF, typeConditional, pReq(0)},
-	"OPTION":     {(*parser).parseOPTION, 0, Range{1, -1}},
+	"PROC":       {PROC, typeDeclarator | typeCodeBlock, Range{0, -1}},
+	"ENDP":       {ENDP, typeCodeBlock, pReq(0)},
+	".MODEL":     {MODEL, typeCodeBlock, Range{1, 6}},
+	"=":          {EQUALS, typeDeclarator, pReq(1)},
+	"EQU":        {EQU, typeDeclarator, Range{1, -1}},
+	"IFDEF":      {IFDEF, typeConditional, pReq(1)},
+	"IFNDEF":     {IFDEF, typeConditional, pReq(1)},
+	"IF":         {IF, typeConditional, pReq(1)},
+	"IFE":        {IF, typeConditional, pReq(1)},
+	"IFB":        {IFB, typeConditional, pReq(1)},
+	"IFNB":       {IFB, typeConditional, pReq(1)},
+	"IFIDN":      {IFIDN, typeConditional, pReq(2)},
+	"IFIDNI":     {IFIDN, typeConditional, pReq(2)},
+	"IFDIF":      {IFIDN, typeConditional, pReq(2)},
+	"IFDIFI":     {IFIDN, typeConditional, pReq(2)},
+	"ELSEIFDEF":  {ELSEIFDEF, typeConditional, pReq(1)},
+	"ELSEIFNDEF": {ELSEIFDEF, typeConditional, pReq(1)},
+	"ELSEIF":     {ELSEIF, typeConditional, pReq(1)},
+	"ELSEIFE":    {ELSEIF, typeConditional, pReq(1)},
+	"ELSEIFB":    {ELSEIFB, typeConditional, pReq(1)},
+	"ELSEIFNB":   {ELSEIFB, typeConditional, pReq(1)},
+	"ELSEIFIDN":  {ELSEIFIDN, typeConditional, pReq(2)},
+	"ELSEIFIDNI": {ELSEIFIDN, typeConditional, pReq(2)},
+	"ELSEIFDIF":  {ELSEIFIDN, typeConditional, pReq(2)},
+	"ELSEIFDIFI": {ELSEIFIDN, typeConditional, pReq(2)},
+	"ELSE":       {ELSE, typeConditional, pReq(0)},
+	"ENDIF":      {ENDIF, typeConditional, pReq(0)},
+	"OPTION":     {OPTION, 0, Range{1, -1}},
 	// Macros
-	"MACRO":  {(*parser).parseMACRO, typeDeclarator | typeMacro, Range{0, -1}},
-	"FOR":    {(*parser).parseDummyMacro, typeMacro, pReq(2)},
-	"FORC":   {(*parser).parseDummyMacro, typeMacro, Range{1, -1}}, // see JWasm's FORC.ASM
-	"REPT":   {(*parser).parseDummyMacro, typeMacro, pReq(1)},
-	"REPEAT": {(*parser).parseDummyMacro, typeMacro, pReq(1)},
-	"WHILE":  {(*parser).parseDummyMacro, typeMacro, pReq(1)},
-	"IRP":    {(*parser).parseDummyMacro, typeMacro, pReq(2)},
-	"IRPC":   {(*parser).parseDummyMacro, typeMacro, pReq(2)},
-	"ENDM":   {(*parser).parseENDM, typeMacro, pReq(0)},
+	"MACRO":  {MACRO, typeDeclarator | typeMacro, Range{0, -1}},
+	"FOR":    {DummyMacro, typeMacro, pReq(2)},
+	"FORC":   {DummyMacro, typeMacro, Range{1, -1}}, // see JWasm's FORC.ASM
+	"REPT":   {DummyMacro, typeMacro, pReq(1)},
+	"REPEAT": {DummyMacro, typeMacro, pReq(1)},
+	"WHILE":  {DummyMacro, typeMacro, pReq(1)},
+	"IRP":    {DummyMacro, typeMacro, pReq(2)},
+	"IRPC":   {DummyMacro, typeMacro, pReq(2)},
+	"ENDM":   {ENDM, typeMacro, pReq(0)},
 	// CPUs
 	".8086": cpuFn, "P8086": cpuFn,
 	".186": cpuFn, "P186": cpuFn,
@@ -1010,21 +1010,21 @@ var parseFns = map[string]parseFn{
 	// support those directives.
 
 	// Segments
-	"SEGMENT": {(*parser).parseSEGMENT, typeDeclarator | typeCodeBlock, Range{0, 1}},
-	"ENDS":    {(*parser).parseENDS, 0, pReq(0)},
+	"SEGMENT": {SEGMENT, typeDeclarator | typeCodeBlock, Range{0, 1}},
+	"ENDS":    {ENDS, 0, pReq(0)},
 	// Data allocations
-	"DB":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
-	"DW":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
-	"DD":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
-	"DQ":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
-	"DF":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
-	"DP":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
-	"DT":    {(*parser).parseDATA, typeEmitData, Range{1, -1}},
-	"LABEL": {(*parser).parseLABEL, typeDeclarator, pReq(1)},
+	"DB":    {DATA, typeEmitData, Range{1, -1}},
+	"DW":    {DATA, typeEmitData, Range{1, -1}},
+	"DD":    {DATA, typeEmitData, Range{1, -1}},
+	"DQ":    {DATA, typeEmitData, Range{1, -1}},
+	"DF":    {DATA, typeEmitData, Range{1, -1}},
+	"DP":    {DATA, typeEmitData, Range{1, -1}},
+	"DT":    {DATA, typeEmitData, Range{1, -1}},
+	"LABEL": {LABEL, typeDeclarator, pReq(1)},
 	// Structures
-	"STRUCT": {(*parser).parseSTRUC, 0, Range{0, 2}}, // Yes, it's possible to have
-	"STRUC":  {(*parser).parseSTRUC, 0, Range{0, 2}}, // unnamed structures and
-	"UNION":  {(*parser).parseSTRUC, 0, Range{0, 2}}, // unions inside named ones.
+	"STRUCT": {STRUC, 0, Range{0, 2}}, // Yes, it's possible to have
+	"STRUC":  {STRUC, 0, Range{0, 2}}, // unnamed structures and
+	"UNION":  {STRUC, 0, Range{0, 2}}, // unions inside named ones.
 }
 
 // getSym returns the value of a symbol that is meant to exist in the map, or
