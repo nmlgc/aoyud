@@ -246,13 +246,13 @@ func lexParam(l *lexer) stateFn {
 	return lexParam
 }
 
+// Initialized in init(), since initializing it globally would result in an
+// initialization loop.
+var lexFns map[string]lexFn
+
 // newInstruction emits the currently cached instruction and starts a new one
 // with the given symbol and value.
 func (l *lexer) newInstruction(sym, val string) {
-	// Nope, turning this global would result in an initialization loop.
-	var lexFns = map[string]lexFn{
-		"INCLUDE": {INCLUDE, pReq(1)},
-	}
 	var err *ErrorList
 
 	l.curInst.typ = itemInstruction
@@ -346,6 +346,12 @@ func (it item) String() string {
 		ret += "\t" + it.params.String()
 	}
 	return ret
+}
+
+func init() {
+	lexFns = map[string]lexFn{
+		"INCLUDE": {INCLUDE, pReq(1)},
+	}
 }
 
 func main() {
