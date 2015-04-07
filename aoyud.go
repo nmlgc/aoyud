@@ -137,10 +137,6 @@ type Range struct {
 	Min, Max int
 }
 
-func pReq(r int) Range {
-	return Range{r, r}
-}
-
 // checkParamRange returns nil if the number of parameters in the item is
 // within the given range, or an error message if it isn't.
 func (it *item) checkParamRange(r Range) *ErrorList {
@@ -180,13 +176,6 @@ type lexer struct {
 }
 
 type stateFn func(*lexer) stateFn
-
-// lexFn represents a function handling a certain instruction or directive
-// at lexing time.
-type lexFn struct {
-	f          func(l *lexer, it *item) *ErrorList
-	paramRange Range
-}
 
 func INCLUDE(l *lexer, it *item) *ErrorList {
 	// Remember to restore the old filename once we're done with this one
@@ -246,10 +235,6 @@ func lexParam(l *lexer) stateFn {
 	return lexParam
 }
 
-// Initialized in init(), since initializing it globally would result in an
-// initialization loop.
-var lexFns map[string]lexFn
-
 // newInstruction emits the currently cached instruction and starts a new one
 // with the given symbol and value.
 func (l *lexer) newInstruction(sym, val string) {
@@ -257,9 +242,9 @@ func (l *lexer) newInstruction(sym, val string) {
 
 	l.curInst.typ = itemInstruction
 
-	if lexFunc, ok := lexFns[strings.ToUpper(l.curInst.val)]; ok {
-		if err = l.curInst.checkParamRange(lexFunc.paramRange); err == nil {
-			err = lexFunc.f(l, &l.curInst)
+	if k, ok := Keywords[strings.ToUpper(l.curInst.val)]; ok && k.Lex != nil {
+		if err = l.curInst.checkParamRange(k.ParamRange); err == nil {
+			err = k.Lex(l, &l.curInst)
 		}
 	} else {
 		l.emit(&l.curInst)
@@ -346,12 +331,6 @@ func (it item) String() string {
 		ret += "\t" + it.params.String()
 	}
 	return ret
-}
-
-func init() {
-	lexFns = map[string]lexFn{
-		"INCLUDE": {INCLUDE, pReq(1)},
-	}
 }
 
 func main() {

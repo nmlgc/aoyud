@@ -416,19 +416,6 @@ func splitColon(s string) (string, string) {
 	return key, val
 }
 
-type parseFnType int
-
-const (
-	typeEmitData    parseFnType = (1 << iota) // Emits data into the program image
-	typeEmitCode                = (1 << iota) // Emits code into the program image
-	typeCodeBlock               = (1 << iota) // Can't appear inside a STRUC or UNION
-	typeConditional             = (1 << iota) // Not kept in the parser's instruction list
-	typeDeclarator              = (1 << iota) // Requires a symbol name
-	typeMacro                   = (1 << iota)
-
-	typeEmit = typeEmitData | typeEmitCode
-)
-
 func (it *item) missingRequiredSym() *ErrorList {
 	if it.sym == "" {
 		return ErrorListF("%s needs a name", it.val)
@@ -436,21 +423,13 @@ func (it *item) missingRequiredSym() *ErrorList {
 	return nil
 }
 
-func (it *item) checkSyntaxFor(fn parseFn) *ErrorList {
-	if fn.typ&typeDeclarator != 0 {
+func (it *item) checkSyntaxFor(k Keyword) *ErrorList {
+	if k.Type&Declarator != 0 {
 		if err := it.missingRequiredSym(); err != nil {
 			return err
 		}
 	}
-	return it.checkParamRange(fn.paramRange)
-}
-
-// parseFn represents a function handling a certain instruction or directive
-// at parsing time.
-type parseFn struct {
-	f          func(p *parser, itemNum int, it *item) *ErrorList
-	typ        parseFnType
-	paramRange Range
+	return it.checkParamRange(k.ParamRange)
 }
 
 func PROC(p *parser, itemNum int, it *item) *ErrorList {
@@ -941,92 +920,6 @@ func LABEL(p *parser, itemNum int, it *item) *ErrorList {
 	return err
 }
 
-var cpuFn = parseFn{CPU, 0, pReq(0)}
-
-var parseFns = map[string]parseFn{
-	"PROC":       {PROC, typeDeclarator | typeCodeBlock, Range{0, -1}},
-	"ENDP":       {ENDP, typeCodeBlock, pReq(0)},
-	".MODEL":     {MODEL, typeCodeBlock, Range{1, 6}},
-	"=":          {EQUALS, typeDeclarator, pReq(1)},
-	"EQU":        {EQU, typeDeclarator, Range{1, -1}},
-	"IFDEF":      {IFDEF, typeConditional, pReq(1)},
-	"IFNDEF":     {IFDEF, typeConditional, pReq(1)},
-	"IF":         {IF, typeConditional, pReq(1)},
-	"IFE":        {IF, typeConditional, pReq(1)},
-	"IFB":        {IFB, typeConditional, pReq(1)},
-	"IFNB":       {IFB, typeConditional, pReq(1)},
-	"IFIDN":      {IFIDN, typeConditional, pReq(2)},
-	"IFIDNI":     {IFIDN, typeConditional, pReq(2)},
-	"IFDIF":      {IFIDN, typeConditional, pReq(2)},
-	"IFDIFI":     {IFIDN, typeConditional, pReq(2)},
-	"ELSEIFDEF":  {ELSEIFDEF, typeConditional, pReq(1)},
-	"ELSEIFNDEF": {ELSEIFDEF, typeConditional, pReq(1)},
-	"ELSEIF":     {ELSEIF, typeConditional, pReq(1)},
-	"ELSEIFE":    {ELSEIF, typeConditional, pReq(1)},
-	"ELSEIFB":    {ELSEIFB, typeConditional, pReq(1)},
-	"ELSEIFNB":   {ELSEIFB, typeConditional, pReq(1)},
-	"ELSEIFIDN":  {ELSEIFIDN, typeConditional, pReq(2)},
-	"ELSEIFIDNI": {ELSEIFIDN, typeConditional, pReq(2)},
-	"ELSEIFDIF":  {ELSEIFIDN, typeConditional, pReq(2)},
-	"ELSEIFDIFI": {ELSEIFIDN, typeConditional, pReq(2)},
-	"ELSE":       {ELSE, typeConditional, pReq(0)},
-	"ENDIF":      {ENDIF, typeConditional, pReq(0)},
-	"OPTION":     {OPTION, 0, Range{1, -1}},
-	// Macros
-	"MACRO":  {MACRO, typeDeclarator | typeMacro, Range{0, -1}},
-	"FOR":    {DummyMacro, typeMacro, pReq(2)},
-	"FORC":   {DummyMacro, typeMacro, Range{1, -1}}, // see JWasm's FORC.ASM
-	"REPT":   {DummyMacro, typeMacro, pReq(1)},
-	"REPEAT": {DummyMacro, typeMacro, pReq(1)},
-	"WHILE":  {DummyMacro, typeMacro, pReq(1)},
-	"IRP":    {DummyMacro, typeMacro, pReq(2)},
-	"IRPC":   {DummyMacro, typeMacro, pReq(2)},
-	"ENDM":   {ENDM, typeMacro, pReq(0)},
-	// CPUs
-	".8086": cpuFn, "P8086": cpuFn,
-	".186": cpuFn, "P186": cpuFn,
-	".286": cpuFn, "P286": cpuFn,
-	".286C": cpuFn, "P286N": cpuFn,
-	".286P": cpuFn, "P286P": cpuFn,
-	".386": cpuFn, "P386": cpuFn,
-	".386C": cpuFn, "P386N": cpuFn,
-	".386P": cpuFn, "P386P": cpuFn,
-	".486": cpuFn, "P486": cpuFn,
-	".486C": cpuFn, "P486N": cpuFn,
-	".486P": cpuFn, // [sic], there is no P486P
-	".586":  cpuFn, "P586": cpuFn,
-	".586C": cpuFn, "P586N": cpuFn,
-	".586P": cpuFn, // ditto
-	".686":  cpuFn, "P686": cpuFn,
-	".686P": cpuFn, // ditto, and no .686C and P686N either
-	".X64":  cpuFn,
-	".X64P": cpuFn,
-	// FPUs
-	".8087": cpuFn, "P8087": cpuFn,
-	".287": cpuFn, "P287": cpuFn,
-	".387": cpuFn, "P387": cpuFn,
-	// TASM also has .487 and .587, but those FPUs don't seem to have
-	// added anything relevant. In fact, neither MASM nor JWasm
-	// support those directives.
-
-	// Segments
-	"SEGMENT": {SEGMENT, typeDeclarator | typeCodeBlock, Range{0, 1}},
-	"ENDS":    {ENDS, 0, pReq(0)},
-	// Data allocations
-	"DB":    {DATA, typeEmitData, Range{1, -1}},
-	"DW":    {DATA, typeEmitData, Range{1, -1}},
-	"DD":    {DATA, typeEmitData, Range{1, -1}},
-	"DQ":    {DATA, typeEmitData, Range{1, -1}},
-	"DF":    {DATA, typeEmitData, Range{1, -1}},
-	"DP":    {DATA, typeEmitData, Range{1, -1}},
-	"DT":    {DATA, typeEmitData, Range{1, -1}},
-	"LABEL": {LABEL, typeDeclarator, pReq(1)},
-	// Structures
-	"STRUCT": {STRUC, 0, Range{0, 2}}, // Yes, it's possible to have
-	"STRUC":  {STRUC, 0, Range{0, 2}}, // unnamed structures and
-	"UNION":  {STRUC, 0, Range{0, 2}}, // unions inside named ones.
-}
-
 // getSym returns the value of a symbol that is meant to exist in the map, or
 // an error if it doesn't.
 func (p *parser) getSym(name string) (asmVal, *ErrorList) {
@@ -1058,31 +951,31 @@ func (p *parser) eval(it *item) {
 		p.syms = make(symMap)
 		p.setCPU("8086")
 	}
-	var typ parseFnType = 0
+	var typ KeywordType = 0
 	insUpper := strings.ToUpper(it.val)
-	fn, ok := parseFns[insUpper]
+	k, ok := Keywords[insUpper]
 	if ok {
 		it.val = insUpper
-		typ = fn.typ
+		typ = k.Type
 	}
-	if !(typ&typeConditional != 0 || (p.ifMatch >= p.ifNest)) {
+	if !(typ&Conditional != 0 || (p.ifMatch >= p.ifNest)) {
 		return
 	}
 	ret := true
-	if typ&typeMacro != 0 || p.macro.nest == 0 {
+	if typ&Macro != 0 || p.macro.nest == 0 {
 		var err *ErrorList
 		if ok {
-			if typ&typeEmit != 0 && p.seg == nil && p.struc == nil {
+			if typ&Emit != 0 && p.seg == nil && p.struc == nil {
 				err = ErrorListF(
 					"code or data emission requires a segment: %s", it,
 				)
-			} else if p.struc != nil && typ&(typeCodeBlock|typeEmitCode) != 0 {
+			} else if p.struc != nil && typ&(CodeBlock|EmitCode) != 0 {
 				err = ErrorListF(
 					"%s not allowed inside structure definition", it.val,
 				)
-			} else if err = it.checkSyntaxFor(fn); err == nil {
-				err = fn.f(p, len(p.instructions), it)
-				ret = typ&typeConditional == 0
+			} else if err = it.checkSyntaxFor(k); err == nil && k.Parse != nil {
+				err = k.Parse(p, len(p.instructions), it)
+				ret = typ&Conditional == 0
 			}
 		} else // Dropping the error on unknown directives/symbols for now
 		if insSym, errSym := p.getSym(it.val); errSym == nil {
