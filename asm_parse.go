@@ -424,7 +424,7 @@ func (it *item) missingRequiredSym() *ErrorList {
 }
 
 func (it *item) checkSyntaxFor(k Keyword) *ErrorList {
-	if k.Type&Declarator != 0 {
+	if k.Sym == Mandatory {
 		if err := it.missingRequiredSym(); err != nil {
 			return err
 		}
@@ -952,10 +952,8 @@ func (p *parser) eval(it *item) {
 		p.setCPU("8086")
 	}
 	var typ KeywordType = 0
-	insUpper := strings.ToUpper(it.val)
-	k, ok := Keywords[insUpper]
+	k, ok := Keywords[it.val]
 	if ok {
-		it.val = insUpper
 		typ = k.Type
 	}
 	if !(typ&Conditional != 0 || (p.ifMatch >= p.ifNest)) {

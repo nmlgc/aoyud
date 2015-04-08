@@ -17,24 +17,6 @@ import (
 )
 
 type charGroup []byte
-type keywordGroup []string
-
-// instructions lists directives that can't be preceded by an identifier name.
-var instructions = keywordGroup{
-	"CALL", "INVOKE", "OPTION",
-}
-
-// declarators lists directives that are preceded by an identifier name.
-var declarators = keywordGroup{
-	"DB", "DW", "DD", "DQ", "DT", "DP", "DF", // data
-	"=", "EQU", "TEXTEQU", "LABEL", // labels
-	"MACRO", "TYPEDEF", // macros
-	"CATSTR", "SUBSTR", "INSTR", "SIZESTR", // string macros
-	"PROC", "ENDP", // procedures
-	"STRUC", "STRUCT", "UNION", "ENDS", // structures
-	"SEGMENT", "ENDS", // segments
-	"GROUP", // groups
-}
 
 var linebreak = charGroup{'\r', '\n'}
 var whitespace = charGroup{' ', '\t'}
@@ -67,18 +49,6 @@ var nestLevelLeave = map[byte]int{
 func (g *charGroup) matches(b byte) bool {
 	for _, v := range *g {
 		if v == b {
-			return true
-		}
-	}
-	return false
-}
-
-func (g *keywordGroup) matches(word string) bool {
-	if len(word) == 0 {
-		return false
-	}
-	for _, v := range *g {
-		if strings.EqualFold(word, v) {
 			return true
 		}
 	}
@@ -162,7 +132,7 @@ func (it *item) checkParamRange(r Range) *ErrorList {
 				", ignoring %d additional ones: ", extra,
 			) + strings.Join(it.params[given-extra:], ", ")
 		}
-		return ErrorListF("%s %s", strings.ToUpper(it.val), textErr)
+		return ErrorListF("%s %s", it.val, textErr)
 	}
 	return nil
 }
@@ -198,14 +168,31 @@ func lexFirst(l *lexer) stateFn {
 		l.stream.next()
 		l.emitItem(&item{typ: itemLabel, sym: first})
 		return lexFirst
-	}
+	} else
 	// Assignment? (Needs to be a special case because = doesn't need to be
 	// surrounded by spaces, and nextUntil() isn't designed to handle that.)
 	if l.stream.peek() == '=' {
 		l.newInstruction(first, string(l.stream.next()))
-	} else if second := l.stream.peekUntil(&wordDelim); !instructions.matches(first) && declarators.matches(second) {
-		l.newInstruction(first, l.stream.nextUntil(&wordDelim))
-	} else if strings.EqualFold(first, "comment") {
+		return lexParam
+	}
+
+	var secondRule SymRule
+	second := l.stream.peekUntil(&wordDelim)
+	firstUpper := strings.ToUpper(first)
+	if _, ok := Keywords[firstUpper]; ok {
+		first = firstUpper
+	} else {
+		secondUpper := strings.ToUpper(second)
+		if k, ok := Keywords[secondUpper]; ok {
+			second = secondUpper
+			secondRule = k.Sym
+		}
+	}
+
+	if secondRule != NotAllowed {
+		l.newInstruction(first, second)
+		l.stream.nextUntil(&wordDelim)
+	} else if firstUpper == "COMMENT" {
 		l.stream.ignore(&whitespace)
 		delim := charGroup{l.stream.next()}
 		l.stream.nextUntil(&delim)
@@ -242,7 +229,7 @@ func (l *lexer) newInstruction(sym, val string) {
 
 	l.curInst.typ = itemInstruction
 
-	if k, ok := Keywords[strings.ToUpper(l.curInst.val)]; ok && k.Lex != nil {
+	if k, ok := Keywords[l.curInst.val]; ok && k.Lex != nil {
 		if err = l.curInst.checkParamRange(k.ParamRange); err == nil {
 			err = k.Lex(l, &l.curInst)
 		}

@@ -7,16 +7,25 @@ const (
 	EmitCode                = (1 << iota) // Emits code into the program image
 	CodeBlock               = (1 << iota) // Can't appear inside a STRUC or UNION
 	Conditional             = (1 << iota) // Not kept in the parser's instruction list
-	Declarator              = (1 << iota) // Requires a symbol name
 	Macro                   = (1 << iota)
 
 	Emit = EmitData | EmitCode
+)
+
+// SymRule states whether a keyword can, must, or can't have a symbol name.
+type SymRule int
+
+const (
+	NotAllowed SymRule = iota
+	Optional
+	Mandatory
 )
 
 type Keyword struct {
 	Lex        func(l *lexer, it *item) *ErrorList               // Function to run at lexing time.
 	Parse      func(p *parser, itemNum int, it *item) *ErrorList // Function to run at parsing time.
 	Type       KeywordType
+	Sym        SymRule
 	ParamRange Range
 }
 
@@ -28,17 +37,19 @@ func init() {
 	}
 
 	cpu := Keyword{Parse: CPU, ParamRange: req(0)}
-	data := Keyword{Parse: DATA, Type: EmitData, ParamRange: Range{1, -1}}
+	data := Keyword{Parse: DATA, Sym: Optional, Type: EmitData, ParamRange: Range{1, -1}}
 
 	Keywords = map[string]Keyword{
 		"INCLUDE": {Lex: INCLUDE, ParamRange: req(1)},
-		"PROC":    {Parse: PROC, Type: Declarator | CodeBlock, ParamRange: Range{0, -1}},
-		"ENDP":    {Parse: ENDP, Type: CodeBlock, ParamRange: req(0)},
+		"PROC":    {Parse: PROC, Sym: Mandatory, Type: CodeBlock, ParamRange: Range{0, -1}},
+		"ENDP":    {Parse: ENDP, Sym: Optional, Type: CodeBlock, ParamRange: req(0)},
 		".MODEL":  {Parse: MODEL, Type: CodeBlock, ParamRange: Range{1, 6}},
 		// Equates
-		"=":     {Parse: EQUALS, Type: Declarator, ParamRange: req(1)},
-		"EQU":   {Parse: EQU, Type: Declarator, ParamRange: Range{1, -1}},
-		"LABEL": {Parse: LABEL, Type: Declarator, ParamRange: req(1)},
+		"=":       {Parse: EQUALS, Sym: Mandatory, ParamRange: req(1)},
+		"EQU":     {Parse: EQU, Sym: Mandatory, ParamRange: Range{1, -1}},
+		"TEXTEQU": {Sym: Mandatory, ParamRange: req(1)}, // TODO
+		"TYPEDEF": {Sym: Mandatory, ParamRange: req(1)}, // TODO
+		"LABEL":   {Parse: LABEL, Sym: Mandatory, ParamRange: req(1)},
 		// Conditionals
 		"IFDEF":      {Parse: IFDEF, Type: Conditional, ParamRange: req(1)},
 		"IFNDEF":     {Parse: IFDEF, Type: Conditional, ParamRange: req(1)},
@@ -64,7 +75,7 @@ func init() {
 		"ENDIF":      {Parse: ENDIF, Type: Conditional, ParamRange: req(0)},
 		"OPTION":     {Parse: OPTION, ParamRange: Range{1, -1}},
 		// Macros
-		"MACRO":  {Parse: MACRO, Type: Declarator | Macro, ParamRange: Range{0, -1}},
+		"MACRO":  {Parse: MACRO, Sym: Mandatory, Type: Macro, ParamRange: Range{0, -1}},
 		"FOR":    {Parse: DummyMacro, Type: Macro, ParamRange: req(2)},
 		"FORC":   {Parse: DummyMacro, Type: Macro, ParamRange: Range{1, -1}}, // see JWasm's FORC.ASM
 		"REPT":   {Parse: DummyMacro, Type: Macro, ParamRange: req(1)},
@@ -101,8 +112,9 @@ func init() {
 		// support those directives.
 
 		// Segments
-		"SEGMENT": {Parse: SEGMENT, Type: Declarator | CodeBlock, ParamRange: Range{0, 1}},
-		"ENDS":    {Parse: ENDS, ParamRange: req(0)},
+		"SEGMENT": {Parse: SEGMENT, Sym: Mandatory, Type: CodeBlock, ParamRange: Range{0, 1}},
+		"ENDS":    {Parse: ENDS, Sym: Optional, ParamRange: req(0)},
+		"GROUP":   {Sym: Mandatory, ParamRange: req(1)}, // TODO
 		// Data allocations
 		"DB": data,
 		"DW": data,
@@ -112,8 +124,13 @@ func init() {
 		"DP": data,
 		"DT": data,
 		// Structures
-		"STRUCT": {Parse: STRUC, ParamRange: Range{0, 2}}, // Yes, it's possible to have
-		"STRUC":  {Parse: STRUC, ParamRange: Range{0, 2}}, // unnamed structures and
-		"UNION":  {Parse: STRUC, ParamRange: Range{0, 2}}, // unions inside named ones.
+		"STRUCT": {Parse: STRUC, Sym: Optional, ParamRange: Range{0, 2}}, // Yes, it's possible to have
+		"STRUC":  {Parse: STRUC, Sym: Optional, ParamRange: Range{0, 2}}, // unnamed structures and
+		"UNION":  {Parse: STRUC, Sym: Optional, ParamRange: Range{0, 2}}, // unions inside named ones.
+		// String functions (all TODO)
+		"CATSTR":  {Sym: Mandatory, ParamRange: Range{1, -1}},
+		"SIZESTR": {Sym: Mandatory, ParamRange: req(1)},
+		"INSTR":   {Sym: Mandatory, ParamRange: Range{2, 3}},
+		"SUBSTR":  {Sym: Mandatory, ParamRange: Range{2, 3}},
 	}
 }
