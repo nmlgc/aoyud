@@ -481,21 +481,21 @@ func MODEL(p *parser, itemNum int, it *item) *ErrorList {
 				m.model = 7
 			}
 		}
-		err = err.AddL(p.setSym("@MODEL", asmInt{n: m.model}, false))
-		err = err.AddL(p.setSym("@CODESIZE", asmInt{n: m.codesize}, false))
-		err = err.AddL(p.setSym("@DATASIZE", asmInt{n: m.datasize}, false))
+		err = err.AddL(p.syms.Set("@MODEL", asmInt{n: m.model}, false))
+		err = err.AddL(p.syms.Set("@CODESIZE", asmInt{n: m.codesize}, false))
+		err = err.AddL(p.syms.Set("@DATASIZE", asmInt{n: m.datasize}, false))
 	} else {
 		err = err.AddF("invalid memory model: %s", model)
 	}
 	if paramCount > 1 {
 		language := strings.ToUpper(it.params[1])
 		if interfaceVal, ok := interfaceSym[language]; ok {
-			err = err.AddL(p.setSym("@INTERFACE", interfaceVal, false))
+			err = err.AddL(p.syms.Set("@INTERFACE", interfaceVal, false))
 		} else {
 			err = err.AddF("invalid language: %s", language)
 		}
 	} else {
-		err = err.AddL(p.setSym("@INTERFACE", interfaceSym["NOLANGUAGE"], false))
+		err = err.AddL(p.syms.Set("@INTERFACE", interfaceSym["NOLANGUAGE"], false))
 	}
 	return err
 }
@@ -503,13 +503,13 @@ func MODEL(p *parser, itemNum int, it *item) *ErrorList {
 func EQUALS(p *parser, itemNum int, it *item) *ErrorList {
 	ret, err := p.evalInt(it.params[0])
 	if err == nil {
-		return p.setSym(it.sym, *ret, false)
+		return p.syms.Set(it.sym, *ret, false)
 	}
 	return err
 }
 
 func EQU(p *parser, itemNum int, it *item) *ErrorList {
-	return p.setSym(it.sym, asmExpression(it.params[0]), true)
+	return p.syms.Set(it.sym, asmExpression(it.params[0]), true)
 }
 
 // text evaluates s as a text string used in a conditional directive.
@@ -533,7 +533,7 @@ func (p *parser) text(s string) (string, *ErrorList) {
 		return s[:rb], err
 	} else if s[0] == '%' {
 		name := strings.TrimSpace(p.syms.ToSymCase(s[1:]))
-		sym, err := p.getSym(name)
+		sym, err := p.syms.Get(name)
 		if err != nil {
 			return "", err
 		}
@@ -719,7 +719,7 @@ func ENDM(p *parser, itemNum int, it *item) *ErrorList {
 	if p.macro.nest == 1 && p.macro.name != "" {
 		macro, err = p.newMacro(itemNum)
 		if err == nil {
-			err = p.setSym(p.macro.name, macro, false)
+			err = p.syms.Set(p.macro.name, macro, false)
 		}
 		p.macro.name = ""
 	}
@@ -796,8 +796,8 @@ func (p *parser) setCPU(directive string) *ErrorList {
 	} else if cpu&cpu386 != 0 {
 		wordsize = 4
 	}
-	err = err.AddL(p.setSym("@CPU", asmInt{n: int64(cpu), base: 2}, false))
-	err = err.AddL(p.setSym("@WORDSIZE", asmInt{n: wordsize}, false))
+	err = err.AddL(p.syms.Set("@CPU", asmInt{n: int64(cpu), base: 2}, false))
+	err = err.AddL(p.syms.Set("@WORDSIZE", asmInt{n: wordsize}, false))
 	return err
 }
 
@@ -849,7 +849,7 @@ func SEGMENT(p *parser, itemNum int, it *item) *ErrorList {
 	seg.prev = p.seg
 	p.seg = seg
 	p.segNest++
-	return errList.AddL(p.setSym(sym, seg, false))
+	return errList.AddL(p.syms.Set(sym, seg, false))
 }
 
 func ENDS(p *parser, itemNum int, it *item) *ErrorList {
@@ -883,7 +883,7 @@ func DATA(p *parser, itemNum int, it *item) *ErrorList {
 	}
 	if it.sym != "" && p.seg != nil {
 		ptr := asmDataPtr{seg: p.seg, off: -1, w: widthMap[it.val]}
-		return p.setSym(it.sym, ptr, true)
+		return p.syms.Set(it.sym, ptr, true)
 	}
 	return nil
 }
@@ -892,32 +892,9 @@ func LABEL(p *parser, itemNum int, it *item) *ErrorList {
 	size, err := p.evalInt(it.params[0])
 	if size != nil && p.seg != nil {
 		ptr := asmDataPtr{seg: p.seg, off: -1, w: uint(size.n)}
-		return err.AddL(p.setSym(it.sym, ptr, true))
+		return err.AddL(p.syms.Set(it.sym, ptr, true))
 	}
 	return err
-}
-
-// getSym returns the value of a symbol that is meant to exist in the map, or
-// an error if it doesn't.
-func (p *parser) getSym(name string) (asmVal, *ErrorList) {
-	realName := p.syms.ToSymCase(name)
-	if ret, ok := p.syms.Map[realName]; ok {
-		return ret.Val, nil
-	}
-	return nil, ErrorListF("unknown symbol: %s", realName)
-}
-
-func (p *parser) setSym(name string, val asmVal, constant bool) *ErrorList {
-	// TODO: Enforce constness for EQU while making sure that the cases in
-	// JWasm's EQUATE6.ASM still work.
-	realName := p.syms.ToSymCase(name)
-	if existing := p.syms.Map[realName]; existing.Constant {
-		return ErrorListF(
-			"constant symbol already defined elsewhere: %s", realName,
-		)
-	}
-	p.syms.Map[realName] = Symbol{Val: val, Constant: constant}
-	return nil
 }
 
 // eval evaluates the given item, updates the parse state accordingly, and
@@ -949,7 +926,7 @@ func (p *parser) eval(it *item) {
 				ret = typ&Conditional == 0
 			}
 		} else // Dropping the error on unknown directives/symbols for now
-		if insSym, errSym := p.getSym(it.val); errSym == nil {
+		if insSym, errSym := p.syms.Get(it.val); errSym == nil {
 			switch insSym.(type) {
 			case asmMacro:
 				ret, err = p.expandMacro(insSym.(asmMacro), it)

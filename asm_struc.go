@@ -78,7 +78,7 @@ func STRUC(p *parser, itemNum int, it *item) *ErrorList {
 		struc.flag = sUnion
 	}
 	if p.struc == nil && struc.name != "" {
-		err = p.setSym(struc.name, struc, true)
+		err = p.syms.Set(struc.name, struc, true)
 	}
 	p.struc = struc
 	return err
