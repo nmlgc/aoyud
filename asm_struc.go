@@ -70,7 +70,7 @@ func STRUC(p *parser, itemNum int, it *item) *ErrorList {
 		return err
 	}
 	struc := &asmStruc{
-		name: p.toSymCase(sym),
+		name: p.syms.ToSymCase(sym),
 		flag: sStruc,
 		prev: p.struc,
 	}

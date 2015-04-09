@@ -198,7 +198,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 	args := make([]asmMacroArg, len(header.params))
 	for i := range header.params {
 		nameOrg, typOrg := splitColon(header.params[i])
-		args[i].name = p.toSymCase(nameOrg)
+		args[i].name = p.syms.ToSymCase(nameOrg)
 		args[i].typ = strings.ToUpper(typOrg)
 		// Verify types
 		if args[i].typ == "REST" || args[i].typ == "VARARG" {
@@ -233,7 +233,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 		if strings.EqualFold(code[i].val, "LOCAL") {
 			if localsAllowed {
 				for _, param := range code[i].params {
-					locals = append(locals, p.toSymCase(param))
+					locals = append(locals, p.syms.ToSymCase(param))
 				}
 				code = code[i+1:]
 				i--
@@ -286,7 +286,7 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 			if token == "&" {
 				andCached = true
 				token = ""
-			} else if arg, ok := replaceMap[p.toSymCase(token)]; ok {
+			} else if arg, ok := replaceMap[p.syms.ToSymCase(token)]; ok {
 				token = arg
 				if stream.peek() == '&' {
 					stream.next()
@@ -344,21 +344,6 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 	return false, errList
 }
 
-type symbol struct {
-	constant bool
-	val      asmVal
-}
-
-func (s symbol) String() string {
-	var ret string
-	if s.constant {
-		ret = "(const) "
-	}
-	return ret + s.val.String() + "\n"
-}
-
-type symMap map[string]symbol
-
 // NestInfo represents a type of named block that can be nested.
 type NestInfo struct {
 	name  string // Name of level 1
@@ -384,9 +369,8 @@ type parser struct {
 	instructions []item
 	// General state
 	syntax          string
-	syms            symMap
-	symCase         bool // case sensitivity for symbols
-	macroLocalCount int  // Number of LOCAL directives expanded
+	syms            SymMap
+	macroLocalCount int // Number of LOCAL directives expanded
 	// Open blocks
 	proc    NestInfo
 	macro   NestInfo
@@ -397,13 +381,6 @@ type parser struct {
 	ifNest  int  // IF nesting level
 	ifMatch int  // Last IF nesting level that evaluated to true
 	ifElse  bool // Can the current level still have an ELSE* block?
-}
-
-func (p *parser) toSymCase(s string) string {
-	if !p.symCase {
-		return strings.ToUpper(s)
-	}
-	return s
 }
 
 func splitColon(s string) (string, string) {
@@ -498,7 +475,7 @@ func MODEL(p *parser, itemNum int, it *item) *ErrorList {
 	model := strings.ToUpper(it.params[0])
 	if m, ok := modelValMap[model]; ok {
 		if model == "FLAT" {
-			if p.syms["@CPU"].val.(asmInt).n&cpu386 == 0 {
+			if p.syms.Map["@CPU"].Val.(asmInt).n&cpu386 == 0 {
 				return err.AddF("FLAT model requires at least a .386 CPU")
 			} else if p.syntax == "MASM" {
 				m.model = 7
@@ -555,7 +532,7 @@ func (p *parser) text(s string) (string, *ErrorList) {
 		}
 		return s[:rb], err
 	} else if s[0] == '%' {
-		name := strings.TrimSpace(p.toSymCase(s[1:]))
+		name := strings.TrimSpace(p.syms.ToSymCase(s[1:]))
 		sym, err := p.getSym(name)
 		if err != nil {
 			return "", err
@@ -629,7 +606,7 @@ var ifidnModeMap = map[string]ifidnMode{
 }
 
 func IFDEF(p *parser, itemNum int, it *item) *ErrorList {
-	_, defined := p.syms[p.toSymCase(it.params[0])]
+	_, defined := p.syms.Map[p.syms.ToSymCase(it.params[0])]
 	mode := it.val == "IFDEF"
 	return p.evalIf(defined == mode)
 }
@@ -659,7 +636,7 @@ func IFIDN(p *parser, itemNum int, it *item) *ErrorList {
 }
 
 func ELSEIFDEF(p *parser, itemNum int, it *item) *ErrorList {
-	_, defined := p.syms[p.toSymCase(it.params[0])]
+	_, defined := p.syms.Map[p.syms.ToSymCase(it.params[0])]
 	mode := it.val == "ELSEIFDEF"
 	return p.evalElseif(it.val, defined == mode)
 }
@@ -707,9 +684,9 @@ func ENDIF(p *parser, itemNum int, it *item) *ErrorList {
 func OPTION(p *parser, itemNum int, it *item) *ErrorList {
 	var options = map[string](map[string]func()){
 		"CASEMAP": {
-			"NONE":      func() { p.symCase = true },
-			"NOTPUBLIC": func() { p.symCase = false },
-			"ALL":       func() { p.symCase = false },
+			"NONE":      func() { p.syms.CaseSensitive = true },
+			"NOTPUBLIC": func() { p.syms.CaseSensitive = false },
+			"ALL":       func() { p.syms.CaseSensitive = false },
 		},
 	}
 	for _, param := range it.params {
@@ -808,8 +785,8 @@ func (p *parser) setCPU(directive string) *ErrorList {
 	if flag, ok := cpuMap[directive]; ok {
 		cpu |= flag
 	} else if flag, ok := fpuMap[directive]; ok {
-		if prevCPU, ok := p.syms["@CPU"]; ok {
-			cpu |= cpuFlag(prevCPU.val.(asmInt).n) & fCPUMask
+		if prevCPU, ok := p.syms.Map["@CPU"]; ok {
+			cpu |= cpuFlag(prevCPU.Val.(asmInt).n) & fCPUMask
 		}
 		cpu |= flag
 	}
@@ -830,8 +807,8 @@ func CPU(p *parser, itemNum int, it *item) *ErrorList {
 }
 
 func SEGMENT(p *parser, itemNum int, it *item) *ErrorList {
-	cpuWordSize := uint(p.syms["@WORDSIZE"].val.(asmInt).n) // can never fail
-	sym := p.toSymCase(it.sym)
+	cpuWordSize := uint(p.syms.Map["@WORDSIZE"].Val.(asmInt).n) // can never fail
+	sym := p.syms.ToSymCase(it.sym)
 	seg := &asmSegment{}
 	var errList *ErrorList
 	var attributes = map[string]func(){
@@ -839,10 +816,10 @@ func SEGMENT(p *parser, itemNum int, it *item) *ErrorList {
 		"USE32": func() { seg.wordsize = 4 },
 		"USE64": func() { seg.wordsize = 8 },
 	}
-	if old, ok := p.syms[sym]; ok {
-		switch old.val.(type) {
+	if old, ok := p.syms.Map[sym]; ok {
+		switch old.Val.(type) {
 		case *asmSegment:
-			seg = old.val.(*asmSegment)
+			seg = old.Val.(*asmSegment)
 		default:
 			return ErrorListF(
 				"cannot redeclare %s as a segment, ignoring", sym,
@@ -876,7 +853,7 @@ func SEGMENT(p *parser, itemNum int, it *item) *ErrorList {
 }
 
 func ENDS(p *parser, itemNum int, it *item) *ErrorList {
-	sym := p.toSymCase(it.sym)
+	sym := p.syms.ToSymCase(it.sym)
 	if p.seg != nil && p.seg.name == sym {
 		var err *ErrorList
 		if p.struc != nil {
@@ -923,23 +900,23 @@ func LABEL(p *parser, itemNum int, it *item) *ErrorList {
 // getSym returns the value of a symbol that is meant to exist in the map, or
 // an error if it doesn't.
 func (p *parser) getSym(name string) (asmVal, *ErrorList) {
-	realName := p.toSymCase(name)
-	if ret, ok := p.syms[realName]; ok {
-		return ret.val, nil
+	realName := p.syms.ToSymCase(name)
+	if ret, ok := p.syms.Map[realName]; ok {
+		return ret.Val, nil
 	}
-	return nil, ErrorListF("unknown symbol %s", realName)
+	return nil, ErrorListF("unknown symbol: %s", realName)
 }
 
 func (p *parser) setSym(name string, val asmVal, constant bool) *ErrorList {
 	// TODO: Enforce constness for EQU while making sure that the cases in
 	// JWasm's EQUATE6.ASM still work.
-	realName := p.toSymCase(name)
-	if existing := p.syms[realName]; existing.constant {
+	realName := p.syms.ToSymCase(name)
+	if existing := p.syms.Map[realName]; existing.Constant {
 		return ErrorListF(
-			"constant symbol %s already defined elsewhere", realName,
+			"constant symbol already defined elsewhere: %s", realName,
 		)
 	}
-	p.syms[realName] = symbol{val: val, constant: constant}
+	p.syms.Map[realName] = Symbol{Val: val, Constant: constant}
 	return nil
 }
 
@@ -986,8 +963,7 @@ func (p *parser) eval(it *item) {
 }
 
 func NewParser(syntax string) *parser {
-	p := &parser{syntax: syntax}
-	p.syms = make(symMap)
+	p := &parser{syntax: syntax, syms: *NewSymMap()}
 	p.setCPU("8086")
 	return p
 }
@@ -1011,16 +987,16 @@ func (p *parser) end() {
 	if p.proc.nest != 0 {
 		log.Printf("ignoring procedure %s without an ENDP directive", p.proc.name)
 	}
-	if len(p.syms) > 0 {
+	if len(p.syms.Map) > 0 {
 		var keys []string
-		for i := range p.syms {
+		for i := range p.syms.Map {
 			keys = append(keys, i)
 		}
 		sort.Strings(keys)
 		log.Println("Symbols: [")
 		log.SetPrefix("")
 		for _, k := range keys {
-			log.Printf("• %s: %s", k, p.syms[k])
+			log.Printf("• %s: %s", k, p.syms.Map[k])
 		}
 		log.Println("]")
 	}
