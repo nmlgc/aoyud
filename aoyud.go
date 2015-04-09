@@ -341,7 +341,7 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	p := parser{syntax: *syntax}
+	p := NewParser(*syntax)
 
 	for i := range l.items {
 		p.eval(&i)

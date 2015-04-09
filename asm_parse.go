@@ -947,10 +947,6 @@ func (p *parser) setSym(name string, val asmVal, constant bool) *ErrorList {
 // keeps it in the parser's instruction list, unless it lies on an ignored
 // conditional branch.
 func (p *parser) eval(it *item) {
-	if p.syms == nil {
-		p.syms = make(symMap)
-		p.setCPU("8086")
-	}
 	var typ KeywordType = 0
 	k, ok := Keywords[it.val]
 	if ok {
@@ -987,6 +983,13 @@ func (p *parser) eval(it *item) {
 	if ret {
 		p.instructions = append(p.instructions, *it)
 	}
+}
+
+func NewParser(syntax string) *parser {
+	p := &parser{syntax: syntax}
+	p.syms = make(symMap)
+	p.setCPU("8086")
+	return p
 }
 
 func (p *parser) end() {
