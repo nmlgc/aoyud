@@ -31,6 +31,15 @@ func (s *SymMap) ToSymCase(str string) string {
 	return str
 }
 
+// Equal returns whether s1 and s2 are equal according to the case sensitivity
+// setting of s.
+func (s *SymMap) Equal(s1 string, s2 string) bool {
+	if !s.CaseSensitive {
+		return strings.EqualFold(s1, s2)
+	}
+	return s1 == s2
+}
+
 // Get returns the value of a symbol that is meant to exist in the map, or an
 // error if it doesn't.
 func (s *SymMap) Get(name string) (asmVal, *ErrorList) {

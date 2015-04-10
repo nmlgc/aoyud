@@ -532,7 +532,7 @@ func (p *parser) text(s string) (string, *ErrorList) {
 		}
 		return s[:rb], err
 	} else if s[0] == '%' {
-		name := strings.TrimSpace(p.syms.ToSymCase(s[1:]))
+		name := strings.TrimSpace(s[1:])
 		sym, err := p.syms.Get(name)
 		if err != nil {
 			return "", err
@@ -606,9 +606,9 @@ var ifidnModeMap = map[string]ifidnMode{
 }
 
 func IFDEF(p *parser, itemNum int, it *item) *ErrorList {
-	_, defined := p.syms.Map[p.syms.ToSymCase(it.params[0])]
+	_, err := p.syms.Get(it.params[0])
 	mode := it.val == "IFDEF"
-	return p.evalIf(defined == mode)
+	return p.evalIf((err == nil) == mode)
 }
 
 func IF(p *parser, itemNum int, it *item) *ErrorList {
@@ -636,9 +636,9 @@ func IFIDN(p *parser, itemNum int, it *item) *ErrorList {
 }
 
 func ELSEIFDEF(p *parser, itemNum int, it *item) *ErrorList {
-	_, defined := p.syms.Map[p.syms.ToSymCase(it.params[0])]
+	_, err := p.syms.Get(it.params[0])
 	mode := it.val == "ELSEIFDEF"
-	return p.evalElseif(it.val, defined == mode)
+	return p.evalElseif(it.val, (err == nil) == mode)
 }
 
 func ELSEIF(p *parser, itemNum int, it *item) *ErrorList {
@@ -808,7 +808,6 @@ func CPU(p *parser, itemNum int, it *item) *ErrorList {
 
 func SEGMENT(p *parser, itemNum int, it *item) *ErrorList {
 	cpuWordSize := uint(p.syms.Map["@WORDSIZE"].Val.(asmInt).n) // can never fail
-	sym := p.syms.ToSymCase(it.sym)
 	seg := &asmSegment{}
 	var errList *ErrorList
 	var attributes = map[string]func(){
@@ -816,18 +815,19 @@ func SEGMENT(p *parser, itemNum int, it *item) *ErrorList {
 		"USE32": func() { seg.wordsize = 4 },
 		"USE64": func() { seg.wordsize = 8 },
 	}
-	if old, ok := p.syms.Map[sym]; ok {
-		switch old.Val.(type) {
+	if old, err := p.syms.Get(it.sym); err == nil {
+		switch old.(type) {
 		case *asmSegment:
-			seg = old.Val.(*asmSegment)
+			seg = old.(*asmSegment)
 		default:
-			return ErrorListF(
-				"cannot redeclare %s as a segment, ignoring", sym,
+			return errList.AddF(
+				"cannot redeclare %s as a segment, ignoring: %s",
+				old.Thing(), it.sym,
 			)
 		}
 	} else {
 		seg.wordsize = cpuWordSize
-		seg.name = sym
+		seg.name = it.sym
 	}
 	if len(it.params) > 0 {
 		for stream := newLexStream(it.params[0]); stream.peek() != eof; {
@@ -849,12 +849,11 @@ func SEGMENT(p *parser, itemNum int, it *item) *ErrorList {
 	seg.prev = p.seg
 	p.seg = seg
 	p.segNest++
-	return errList.AddL(p.syms.Set(sym, seg, false))
+	return errList.AddL(p.syms.Set(it.sym, seg, false))
 }
 
 func ENDS(p *parser, itemNum int, it *item) *ErrorList {
-	sym := p.syms.ToSymCase(it.sym)
-	if p.seg != nil && p.seg.name == sym {
+	if p.seg != nil && p.syms.Equal(p.seg.name, it.sym) {
 		var err *ErrorList
 		if p.struc != nil {
 			err = ErrorListOpen(p.struc)
@@ -869,12 +868,12 @@ func ENDS(p *parser, itemNum int, it *item) *ErrorList {
 		if p.struc.prev == nil {
 			expSym = p.struc.name
 		}
-		if sym == expSym {
+		if p.syms.Equal(it.sym, expSym) {
 			p.struc = p.struc.prev
 			return nil
 		}
 	}
-	return ErrorListF("unmatched ENDS: %s", sym)
+	return ErrorListF("unmatched ENDS: %s", it.sym)
 }
 
 func DATA(p *parser, itemNum int, it *item) *ErrorList {
