@@ -121,7 +121,7 @@ func newAsmInt(input string) (asmInt, *ErrorList) {
 	}
 	n, err := strconv.ParseInt(input, base, 0)
 	if err != nil {
-		return asmInt{}, NewErrorList(err)
+		return asmInt{}, NewErrorList(ESError, err)
 	}
 	return asmInt{n: n, base: base}, nil
 }
@@ -194,6 +194,7 @@ func (v asmMacro) String() string {
 
 // newMacro creates a new multiline macro ending at itemNum.
 func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
+	var err *ErrorList
 	header := p.instructions[p.macro.start]
 	args := make([]asmMacroArg, len(header.params))
 	for i := range header.params {
@@ -205,7 +206,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 			if i != len(header.params)-1 {
 				// TASM would actually accept this, but we better
 				// complain since it doesn't make sense at all.
-				return asmMacro{}, ErrorListFAt(&header.pos,
+				return asmMacro{}, ErrorListFAt(&header.pos, ESError,
 					"%s:%s must be the last parameter",
 					args[i].name, args[i].typ,
 				)
@@ -219,14 +220,13 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 				args[i].typ = "="
 				args[i].def = def
 			} else {
-				return asmMacro{}, ErrorListFAt(&header.pos,
+				err = err.AddFAt(&header.pos, ESWarning,
 					"invalid macro argument type: %s", args[i].typ,
 				)
 			}
 		}
 	}
 	var locals []string
-	var err *ErrorList
 	localsAllowed := true
 	code := p.instructions[p.macro.start+1 : itemNum]
 	for i := 0; i < len(code); i++ {
@@ -238,7 +238,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 				code = code[i+1:]
 				i--
 			} else {
-				err = err.AddFAt(&code[i].pos,
+				err = err.AddFAt(&code[i].pos, ESError,
 					"LOCAL directives must come first in a macro body, ignoring: %s",
 					code[i].params.String(),
 				)
@@ -312,7 +312,7 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 			errList = errList.AddL(err)
 		}
 		if arg.typ == "REQ" && !got {
-			errList = errList.AddF(
+			errList = errList.AddF(ESError,
 				"macro argument #%d (%s) is required", i+1, arg.name,
 			)
 		}
@@ -362,7 +362,7 @@ func ErrorListOpen(block Nestable) *ErrorList {
 	for block := block.Prev(); block != nil; block = block.Prev() {
 		str += " ← " + block.Name()
 	}
-	return ErrorListF(str)
+	return ErrorListF(ESWarning, str)
 }
 
 type parser struct {
@@ -395,7 +395,7 @@ func splitColon(s string) (string, string) {
 
 func (it *item) missingRequiredSym() *ErrorList {
 	if it.sym == "" {
-		return ErrorListF("%s needs a name", it.val)
+		return ErrorListF(ESError, "%s needs a name", it.val)
 	}
 	return nil
 }
@@ -415,7 +415,7 @@ func PROC(p *parser, itemNum int, it *item) *ErrorList {
 		p.proc.name = it.sym
 		p.proc.start = itemNum
 	} else {
-		err = ErrorListF("ignoring nested procedure %s", it.sym)
+		err = ErrorListF(ESWarning, "ignoring nested procedure %s", it.sym)
 	}
 	p.proc.nest++
 	return err
@@ -424,11 +424,11 @@ func PROC(p *parser, itemNum int, it *item) *ErrorList {
 func ENDP(p *parser, itemNum int, it *item) *ErrorList {
 	var err *ErrorList
 	if p.proc.nest == 0 {
-		return ErrorListF(
+		return ErrorListF(ESDebug,
 			"ignoring procedure %s without a PROC directive", it.sym,
 		)
 	} else if p.proc.nest == 1 {
-		err = ErrorListF(
+		err = ErrorListF(ESDebug,
 			"found procedure %s ranging from lex items #%d-#%d",
 			p.proc.name, p.proc.start, itemNum,
 		)
@@ -476,7 +476,9 @@ func MODEL(p *parser, itemNum int, it *item) *ErrorList {
 	if m, ok := modelValMap[model]; ok {
 		if model == "FLAT" {
 			if p.syms.Map["@CPU"].Val.(asmInt).n&cpu386 == 0 {
-				return err.AddF("FLAT model requires at least a .386 CPU")
+				return err.AddF(ESError,
+					"FLAT model requires at least a .386 CPU",
+				)
 			} else if p.syntax == "MASM" {
 				m.model = 7
 			}
@@ -485,14 +487,14 @@ func MODEL(p *parser, itemNum int, it *item) *ErrorList {
 		err = err.AddL(p.syms.Set("@CODESIZE", asmInt{n: m.codesize}, false))
 		err = err.AddL(p.syms.Set("@DATASIZE", asmInt{n: m.datasize}, false))
 	} else {
-		err = err.AddF("invalid memory model: %s", model)
+		err = err.AddF(ESError, "invalid memory model: %s", model)
 	}
 	if paramCount > 1 {
 		language := strings.ToUpper(it.params[1])
 		if interfaceVal, ok := interfaceSym[language]; ok {
 			err = err.AddL(p.syms.Set("@INTERFACE", interfaceVal, false))
 		} else {
-			err = err.AddF("invalid language: %s", language)
+			err = err.AddF(ESError, "invalid language: %s", language)
 		}
 	} else {
 		err = err.AddL(p.syms.Set("@INTERFACE", interfaceSym["NOLANGUAGE"], false))
@@ -515,7 +517,9 @@ func EQU(p *parser, itemNum int, it *item) *ErrorList {
 // text evaluates s as a text string used in a conditional directive.
 func (p *parser) text(s string) (string, *ErrorList) {
 	fail := func() (string, *ErrorList) {
-		return "", ErrorListF("invalid <text string> or %%text_macro: %s", s)
+		return "", ErrorListF(ESError,
+			"invalid <text string> or %%text_macro: %s", s,
+		)
 	}
 	if s[0] == '<' {
 		var err *ErrorList
@@ -528,7 +532,9 @@ func (p *parser) text(s string) (string, *ErrorList) {
 		if rb == -1 {
 			return fail()
 		} else if rb != len(s)-1 {
-			err = ErrorListF("extra characters on line: %s", s[rb+1:])
+			err = ErrorListF(ESWarning,
+				"extra characters on line: %s", s[rb+1:],
+			)
 		}
 		return s[:rb], err
 	} else if s[0] == '%' {
@@ -543,7 +549,7 @@ func (p *parser) text(s string) (string, *ErrorList) {
 		case asmExpression:
 			return string(sym.(asmExpression)), nil
 		default:
-			return "", ErrorListF(
+			return "", ErrorListF(ESError,
 				"can't use %s as a text string: %s", sym.Thing(), name,
 			)
 		}
@@ -580,7 +586,7 @@ func (p *parser) evalIf(match bool) *ErrorList {
 
 func (p *parser) evalElseif(directive string, match bool) *ErrorList {
 	if p.ifNest == 0 {
-		return ErrorListF("unmatched %s", directive)
+		return ErrorListF(ESWarning, "unmatched %s", directive)
 	}
 	if p.ifMatch == p.ifNest {
 		p.ifMatch--
@@ -671,7 +677,7 @@ func ELSE(p *parser, itemNum int, it *item) *ErrorList {
 
 func ENDIF(p *parser, itemNum int, it *item) *ErrorList {
 	if p.ifNest == 0 {
-		return ErrorListF("found ENDIF without a matching condition")
+		return ErrorListF(ESWarning, "found ENDIF without a matching condition")
 	}
 	if p.ifMatch == p.ifNest {
 		p.ifMatch--
@@ -697,7 +703,9 @@ func OPTION(p *parser, itemNum int, it *item) *ErrorList {
 			if fn, valOK := opt[val]; valOK {
 				fn()
 			} else {
-				return ErrorListF("illegal value for OPTION %s: %s", key, val)
+				return ErrorListF(ESWarning,
+					"illegal value for OPTION %s: %s", key, val,
+				)
 			}
 		}
 	}
@@ -820,7 +828,9 @@ func SEGMENT(p *parser, itemNum int, it *item) *ErrorList {
 		case *asmSegment:
 			seg = old.(*asmSegment)
 		default:
-			return errList.AddF(
+			// Could be a warning, but will most likely lead to another
+			// nesting error.
+			return errList.AddF(ESError,
 				"cannot redeclare %s as a segment, ignoring: %s",
 				old.Thing(), it.sym,
 			)
@@ -839,12 +849,14 @@ func SEGMENT(p *parser, itemNum int, it *item) *ErrorList {
 		}
 	}
 	if seg.wordsize > cpuWordSize {
+		var str string
 		switch seg.wordsize {
 		case 4:
-			return errList.AddF("32-bit segments require at least a .386 CPU setting")
+			str = "32-bit segments require at least a .386 CPU setting"
 		case 8:
-			return errList.AddF("64-bit segments require at least a .X64 CPU setting")
+			str = "64-bit segments require at least a .X64 CPU setting"
 		}
+		return errList.AddF(ESError, str)
 	}
 	seg.prev = p.seg
 	p.seg = seg
@@ -873,7 +885,7 @@ func ENDS(p *parser, itemNum int, it *item) *ErrorList {
 			return nil
 		}
 	}
-	return ErrorListF("unmatched ENDS: %s", it.sym)
+	return ErrorListF(ESError, "unmatched ENDS: %s", it.sym)
 }
 
 func DATA(p *parser, itemNum int, it *item) *ErrorList {
@@ -913,11 +925,11 @@ func (p *parser) eval(it *item) {
 		var err *ErrorList
 		if ok {
 			if typ&Emit != 0 && p.seg == nil && p.struc == nil {
-				err = ErrorListF(
+				err = ErrorListF(ESError,
 					"code or data emission requires a segment: %s", it,
 				)
 			} else if p.struc != nil && typ&(CodeBlock|EmitCode) != 0 {
-				err = ErrorListF(
+				err = ErrorListF(ESError,
 					"%s not allowed inside structure definition", it.val,
 				)
 			} else if err = it.checkSyntaxFor(k); err == nil && k.Parse != nil {

@@ -41,7 +41,7 @@ func (s *lexStream) next() byte {
 func (s *lexStream) nextAssert(b byte, prev string) *ErrorList {
 	ret := s.next() == b
 	if !ret {
-		return ErrorListF("missing a closing %c: %s", b, prev)
+		return ErrorListF(ESWarning, "missing a closing %c: %s", b, prev)
 	}
 	return nil
 }

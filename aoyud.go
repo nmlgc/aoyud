@@ -110,6 +110,7 @@ type Range struct {
 // checkParamRange returns nil if the number of parameters in the item is
 // within the given range, or an error message if it isn't.
 func (it *item) checkParamRange(r Range) *ErrorList {
+	var sev ErrorSeverity
 	given := len(it.params)
 	below := given < r.Min
 	if below || uint(given) > uint(r.Max) {
@@ -121,6 +122,7 @@ func (it *item) checkParamRange(r Range) *ErrorList {
 			textErr = fmt.Sprintf(
 				"requires at least %d parameters, %d given", r.Min, given,
 			) + textParams
+			sev = ESError
 		} else {
 			if r.Max == 0 {
 				textParams = "accepts no parameters"
@@ -131,8 +133,9 @@ func (it *item) checkParamRange(r Range) *ErrorList {
 			textErr = textParams + fmt.Sprintf(
 				", ignoring %d additional ones: ", extra,
 			) + strings.Join(it.params[given-extra:], ", ")
+			sev = ESWarning
 		}
-		return ErrorListF("%s %s", it.val, textErr)
+		return ErrorListF(sev, "%s %s", it.val, textErr)
 	}
 	return nil
 }
@@ -238,7 +241,7 @@ func (l *lexer) newInstruction(sym, val string) {
 	}
 	if err != nil {
 		l.curInst.pos[0].line = l.stream.line
-		l.curInst.pos.ErrorFatal(err)
+		l.curInst.pos.ErrorPrint(err)
 	}
 	l.curInst.sym = sym
 	l.curInst.val = val
@@ -279,10 +282,10 @@ func readFirstFromPaths(filename string, paths []string) (string, string, *Error
 		if err == nil {
 			return string(bytes), fullname, nil
 		} else if !os.IsNotExist(err) {
-			return "", "", NewErrorList(err)
+			return "", "", NewErrorList(ESFatal, err)
 		}
 	}
-	return "", "", ErrorListF(
+	return "", "", ErrorListF(ESFatal,
 		"could not find %s in any of the source paths:\n\t%s",
 		filename, strings.Join(paths, "\n\t"),
 	)

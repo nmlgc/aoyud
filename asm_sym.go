@@ -47,7 +47,7 @@ func (s *SymMap) Get(name string) (asmVal, *ErrorList) {
 	if ret, ok := s.Map[realName]; ok {
 		return ret.Val, nil
 	}
-	return nil, ErrorListF("unknown symbol: %s", realName)
+	return nil, ErrorListF(ESError, "unknown symbol: %s", realName)
 }
 
 func (s *SymMap) Set(name string, val asmVal, constant bool) *ErrorList {
@@ -55,7 +55,7 @@ func (s *SymMap) Set(name string, val asmVal, constant bool) *ErrorList {
 	// JWasm's EQUATE6.ASM still work.
 	realName := s.ToSymCase(name)
 	if existing := s.Map[realName]; existing.Constant {
-		return ErrorListF(
+		return ErrorListF(ESError,
 			"constant symbol already defined elsewhere: %s", realName,
 		)
 	}

@@ -6,28 +6,32 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 )
 
 type printlnFn func(*log.Logger, ...interface{})
 
 var codeLogger = log.New(os.Stderr, "", 0)
 
-func (p *ItemPos) callPrintln(fn printlnFn, err *ErrorList) {
+func (p *ItemPos) ErrorPrint(err *ErrorList) {
 	if err != nil {
 		for _, e := range *err {
-			if e.pos != nil {
-				fn(codeLogger, e.pos.String()+e.s)
-			} else {
-				fn(codeLogger, p.String()+e.s)
+			fn := codeLogger.Println
+			if e.sev == ESFatal {
+				fn = codeLogger.Fatalln
 			}
+
+			var posstr string
+			sevstr := e.sev.String()
+			if e.pos != nil {
+				posstr = e.pos.String()
+			} else {
+				posstr = p.String()
+			}
+			posstr = strings.Replace(
+				posstr, "\n", "\n"+strings.Repeat(" ", len(sevstr)), -1,
+			)
+			fn(sevstr + posstr + e.s)
 		}
 	}
-}
-
-func (p *ItemPos) ErrorFatal(err *ErrorList) {
-	p.callPrintln((*log.Logger).Fatalln, err)
-}
-
-func (p *ItemPos) ErrorPrint(err *ErrorList) {
-	p.callPrintln((*log.Logger).Println, err)
 }

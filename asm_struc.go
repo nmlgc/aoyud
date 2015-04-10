@@ -59,7 +59,7 @@ func STRUC(p *parser, itemNum int, it *item) *ErrorList {
 	sym := it.sym
 	if p.struc != nil {
 		if it.sym != "" {
-			return ErrorListF(
+			return ErrorListF(ESError,
 				"name of nested structure must come after %s: %s",
 				it.val, it.sym,
 			)

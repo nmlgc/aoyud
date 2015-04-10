@@ -27,7 +27,7 @@ func (v asmString) String() string {
 func (v asmString) toInt() (asmInt, *ErrorList) {
 	ret := asmInt{base: 256}
 	if len(v) > maxbytes {
-		return ret, ErrorListF(
+		return ret, ErrorListF(ESError,
 			"string constant larger than %d bytes: %s", maxbytes, v,
 		)
 	}

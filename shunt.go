@@ -104,7 +104,7 @@ func (stack *shuntStack) pop() (shuntVal, *ErrorList) {
 		*stack = (*stack)[:len(*stack)-1]
 		return ret, nil
 	}
-	return nil, ErrorListF("arithmetic stack underflow")
+	return nil, ErrorListF(ESError, "arithmetic stack underflow")
 }
 
 // Why, Go, why.
@@ -192,7 +192,7 @@ func (retStack *shuntStack) pushOp(opStack *shuntStack, newOp *shuntOp) (*shuntO
 			top, err = opStack.pop()
 		}
 		if top == nil {
-			err = err.AddF("mismatched parentheses")
+			err = err.AddF(ESError, "mismatched parentheses")
 		}
 		return &binaryOperators, err
 	case opParenL:
@@ -238,7 +238,7 @@ func (p *parser) shuntLoop(s *shuntState, expr string) *ErrorList {
 		case asmExpression:
 			err = p.shuntLoop(s, string(token.(asmExpression)))
 		default:
-			err = err.AddF(
+			err = err.AddF(ESError,
 				"can't use %s in arithmetic expression", token.Thing(),
 			)
 		}
@@ -257,7 +257,7 @@ func (p *parser) shunt(expr string) (*shuntStack, *ErrorList) {
 	for top := s.opStack.peek(); top != nil; top = s.opStack.peek() {
 		s.opStack.pop()
 		if top.(*shuntOp).id == opParenL {
-			err = err.AddF("missing a right parenthesis")
+			err = err.AddF(ESError, "missing a right parenthesis")
 		} else {
 			s.retStack.push(top)
 		}
@@ -277,7 +277,7 @@ func (s shuntStack) solve() (*asmInt, *ErrorList) {
 		errList = errList.AddL(err)
 	}
 	if len(retStack) != 1 {
-		return nil, errList.AddF("invalid RPN expression: %s", s)
+		return nil, errList.AddF(ESError, "invalid RPN expression: %s", s)
 	}
 	result := retStack[0].(asmInt)
 	return &result, errList
