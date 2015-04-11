@@ -40,14 +40,23 @@ func (s *SymMap) Equal(s1 string, s2 string) bool {
 	return s1 == s2
 }
 
-// Get returns the value of a symbol that is meant to exist in the map, or an
-// error if it doesn't.
-func (s *SymMap) Get(name string) (asmVal, *ErrorList) {
+// Lookup wraps Go's own map lookup using the case sensitivity setting of s,
+// and returns the value of the symbol, or nil if it doesn't exist in s.
+func (s *SymMap) Lookup(name string) asmVal {
 	realName := s.ToSymCase(name)
 	if ret, ok := s.Map[realName]; ok {
-		return ret.Val, nil
+		return ret.Val
 	}
-	return nil, ErrorListF(ESError, "unknown symbol: %s", realName)
+	return nil
+}
+
+// Get returns the value of a symbol that is meant to exist in s, or an error
+// if it doesn't.
+func (s *SymMap) Get(name string) (asmVal, *ErrorList) {
+	if ret := s.Lookup(name); ret != nil {
+		return ret, nil
+	}
+	return nil, ErrorListF(ESError, "unknown symbol: %s", name)
 }
 
 func (s *SymMap) Set(name string, val asmVal, constant bool) *ErrorList {
