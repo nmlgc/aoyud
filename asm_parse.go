@@ -615,8 +615,8 @@ var ifidnModeMap = map[string]ifidnMode{
 
 func IFDEF(p *parser, itemNum int, it *item) *ErrorList {
 	mode := it.val == "IFDEF"
-	val := p.syms.Lookup(it.params[0])
-	return p.evalIf((val != nil) == mode)
+	val, err := p.syms.Lookup(it.params[0])
+	return err.AddL(p.evalIf((val != nil) == mode))
 }
 
 func IF(p *parser, itemNum int, it *item) *ErrorList {
@@ -645,8 +645,8 @@ func IFIDN(p *parser, itemNum int, it *item) *ErrorList {
 
 func ELSEIFDEF(p *parser, itemNum int, it *item) *ErrorList {
 	mode := it.val == "ELSEIFDEF"
-	val := p.syms.Lookup(it.params[0])
-	return p.evalElseif(it.val, (val != nil) == mode)
+	val, err := p.syms.Lookup(it.params[0])
+	return err.AddL(p.evalElseif(it.val, (val != nil) == mode))
 }
 
 func ELSEIF(p *parser, itemNum int, it *item) *ErrorList {
@@ -824,7 +824,7 @@ func SEGMENT(p *parser, itemNum int, it *item) *ErrorList {
 		"USE32": func() { seg.wordsize = 4 },
 		"USE64": func() { seg.wordsize = 8 },
 	}
-	if old := p.syms.Lookup(it.sym); old != nil {
+	if old, errList := p.syms.Lookup(it.sym); old != nil {
 		switch old.(type) {
 		case *asmSegment:
 			seg = old.(*asmSegment)
