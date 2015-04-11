@@ -1,4 +1,5 @@
-// Custom error type storing a list of error strings.
+// Custom error type storing a list of error strings. All methods are designed
+// to also work on nil pointers.
 
 package main
 
@@ -79,4 +80,18 @@ func ErrorListF(sev ErrorSeverity, format string, a ...interface{}) *ErrorList {
 // string at the given code position.
 func ErrorListFAt(pos *ItemPos, sev ErrorSeverity, format string, a ...interface{}) *ErrorList {
 	return &ErrorList{Error{s: fmt.Sprintf(format, a...), pos: pos, sev: sev}}
+}
+
+// Severity returns the highest severity value inside e, or ESNone if e is
+// empty.
+func (e *ErrorList) Severity() ErrorSeverity {
+	ret := ESNone
+	if e != nil {
+		for _, err := range *e {
+			if err.sev > ret {
+				ret = err.sev
+			}
+		}
+	}
+	return ret
 }

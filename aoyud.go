@@ -233,8 +233,9 @@ func (l *lexer) newInstruction(sym, val string) {
 	l.curInst.typ = itemInstruction
 
 	if k, ok := Keywords[l.curInst.val]; ok && k.Lex != nil {
-		if err = l.curInst.checkParamRange(k.ParamRange); err == nil {
-			err = k.Lex(l, &l.curInst)
+		err = l.curInst.checkParamRange(k.ParamRange)
+		if err.Severity() < ESError {
+			err = err.AddL(k.Lex(l, &l.curInst))
 		}
 	} else {
 		l.emit(&l.curInst)

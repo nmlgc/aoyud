@@ -214,7 +214,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 		} else if !(args[i].typ == "" || args[i].typ == "REQ") {
 			if typOrg[0] == '=' {
 				def, err := p.text(strings.TrimSpace(typOrg[1:]))
-				if err != nil {
+				if err.Severity() >= ESError {
 					return asmMacro{}, err
 				}
 				args[i].typ = "="
@@ -258,11 +258,13 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 	replaceMap := make(map[string]string)
 
 	setArg := func(name string, i int) (bool, *ErrorList) {
+		var text string
+		var err *ErrorList
 		ret := len(it.params) > i && len(it.params[i]) > 0
 		if ret {
 			if it.params[i][0] == '<' || it.params[i][0] == '%' {
-				text, err := p.text(it.params[i])
-				if err != nil {
+				text, err = p.text(it.params[i])
+				if err.Severity() >= ESError {
 					return false, err
 				}
 				replaceMap[name] = text
@@ -270,7 +272,7 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 				replaceMap[name] = it.params[i]
 			}
 		}
-		return ret, nil
+		return ret, err
 	}
 
 	replace := func(it *item, s string) string {
@@ -317,7 +319,7 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 			)
 		}
 	}
-	if errList != nil && len(*errList) != 0 {
+	if errList.Severity() >= ESError {
 		return true, errList
 	}
 	for _, local := range m.locals {
@@ -626,7 +628,7 @@ func IF(p *parser, itemNum int, it *item) *ErrorList {
 func IFB(p *parser, itemNum int, it *item) *ErrorList {
 	mode := it.val == "IFB"
 	ret, err := p.isBlank(it.params[0])
-	if err != nil {
+	if err.Severity() >= ESError {
 		return err
 	}
 	return p.evalIf(ret == mode)
@@ -635,7 +637,7 @@ func IFB(p *parser, itemNum int, it *item) *ErrorList {
 func IFIDN(p *parser, itemNum int, it *item) *ErrorList {
 	mode := ifidnModeMap[it.val]
 	ret, err := mode.compareFn(p, it.params[0], it.params[1])
-	if err != nil {
+	if err.Severity() >= ESError {
 		return err
 	}
 	return p.evalIf(ret == mode.identical)
@@ -654,18 +656,18 @@ func ELSEIF(p *parser, itemNum int, it *item) *ErrorList {
 }
 
 func ELSEIFB(p *parser, itemNum int, it *item) *ErrorList {
+	mode := it.val == "ELSEIFB"
 	ret, err := p.isBlank(it.params[0])
-	if err != nil {
+	if err.Severity() >= ESError {
 		return err
 	}
-	mode := it.val == "ELSEIFB"
 	return p.evalElseif(it.val, ret == mode)
 }
 
 func ELSEIFIDN(p *parser, itemNum int, it *item) *ErrorList {
 	mode := ifidnModeMap[it.val[4:]]
 	ret, err := mode.compareFn(p, it.params[0], it.params[1])
-	if err != nil {
+	if err.Severity() >= ESError {
 		return err
 	}
 	return p.evalElseif(it.val, ret == mode.identical)
@@ -725,9 +727,8 @@ func ENDM(p *parser, itemNum int, it *item) *ErrorList {
 	var macro asmMacro
 	var err *ErrorList
 	if p.macro.nest == 1 && p.macro.name != "" {
-		macro, err = p.newMacro(itemNum)
-		if err == nil {
-			err = p.syms.Set(p.macro.name, macro, false)
+		if macro, err = p.newMacro(itemNum); err.Severity() < ESError {
+			err = err.AddL(p.syms.Set(p.macro.name, macro, false))
 		}
 		p.macro.name = ""
 	}
@@ -932,9 +933,11 @@ func (p *parser) eval(it *item) {
 				err = ErrorListF(ESError,
 					"%s not allowed inside structure definition", it.val,
 				)
-			} else if err = it.checkSyntaxFor(k); err == nil && k.Parse != nil {
-				err = k.Parse(p, len(p.instructions), it)
-				ret = typ&Conditional == 0
+			} else if k.Parse != nil {
+				if err = it.checkSyntaxFor(k); err.Severity() < ESError {
+					err = k.Parse(p, len(p.instructions), it)
+					ret = typ&Conditional == 0
+				}
 			}
 		} else // Dropping the error on unknown directives/symbols for now
 		if insSym, errSym := p.syms.Get(it.val); errSym == nil {

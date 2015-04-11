@@ -223,7 +223,7 @@ func (p *parser) shuntLoop(s *shuntState, expr string) *ErrorList {
 	stream := newLexStream(expr)
 	for stream.peek() != eof && err == nil {
 		token, err = p.nextShuntToken(stream, s.opSet)
-		if err != nil {
+		if err.Severity() >= ESError {
 			return err
 		}
 		switch token.(type) {

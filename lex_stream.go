@@ -36,11 +36,10 @@ func (s *lexStream) next() byte {
 	return ret
 }
 
-// nextAssert consumes the next byte in the input and returns an error message
-// if it is not equal to b.
+// nextAssert consumes the next byte in the input and returns a warning if it
+// is not equal to b.
 func (s *lexStream) nextAssert(b byte, prev string) *ErrorList {
-	ret := s.next() == b
-	if !ret {
+	if ret := s.next() == b; !ret {
 		return ErrorListF(ESWarning, "missing a closing %c: %s", b, prev)
 	}
 	return nil
