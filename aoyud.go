@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"gopkg.in/alecthomas/kingpin.v1"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,9 +65,12 @@ func (p SourcePos) String() string {
 
 type ItemPos []SourcePos
 
-func (p ItemPos) String() string {
+func (p *ItemPos) String() string {
 	ret := ""
-	for i, pos := range p {
+	if p == nil {
+		return ret
+	}
+	for i, pos := range *p {
 		if i != 0 {
 			ret += "\n" + strings.Repeat(" ", i)
 		}
@@ -339,11 +341,9 @@ func main() {
 
 	kingpin.Parse()
 
-	log.SetFlags(0)
-
 	l, err := lexFile(*filename, *includes)
 	if err != nil {
-		log.Fatalln(err)
+		PosNull.ErrorPrint(err)
 	}
 	p := NewParser(*syntax)
 

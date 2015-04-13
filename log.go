@@ -13,6 +13,11 @@ type printlnFn func(*log.Logger, ...interface{})
 
 var codeLogger = log.New(os.Stderr, "", 0)
 
+var PosNull *ItemPos = nil
+
+// ErrorPrint pretty-prints the given error list, using the position p for any
+// error that does not have a set position. Call this method on PosNull to not
+// print any default position.
 func (p *ItemPos) ErrorPrint(err *ErrorList) {
 	if err != nil {
 		for _, e := range *err {
