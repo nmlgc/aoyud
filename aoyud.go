@@ -15,45 +15,6 @@ import (
 	"strings"
 )
 
-type charGroup []byte
-
-var linebreak = charGroup{'\r', '\n'}
-var whitespace = charGroup{' ', '\t'}
-var quotes = charGroup{'\'', '"'}
-var paramDelim = append(charGroup{',', ';'}, linebreak...)
-var wordDelim = append(append(charGroup{':'}, whitespace...), paramDelim...)
-var insDelim = append(charGroup{'='}, wordDelim...)
-var shuntDelim = append(charGroup{
-	'+', '-', '*', '/', '|', '(', ')', '[', ']', '<', '>', ':', '&', '"', '\'',
-}, whitespace...)
-var segmentDelim = append(charGroup{'\'', '"'}, whitespace...)
-
-// nestLevelEnter and nestLevelLeave map the various punctuation marks used in
-// TASM's syntax to bit flags ordered by their respective nesting priorities.
-var nestLevelEnter = map[byte]int{
-	'{':  1,
-	'(':  2,
-	'<':  4,
-	'"':  8,
-	'\'': 8,
-}
-var nestLevelLeave = map[byte]int{
-	'}':  1,
-	')':  2,
-	'>':  4,
-	'"':  8,
-	'\'': 8,
-}
-
-func (g *charGroup) matches(b byte) bool {
-	for _, v := range *g {
-		if v == b {
-			return true
-		}
-	}
-	return false
-}
-
 type SourcePos struct {
 	filename *string
 	line     uint
