@@ -411,11 +411,11 @@ func (it *item) checkSyntaxFor(k Keyword) *ErrorList {
 	return it.checkParamRange(k.ParamRange)
 }
 
-func PROC(p *parser, itemNum int, it *item) *ErrorList {
+func PROC(p *parser, it *item) *ErrorList {
 	var err *ErrorList
 	if p.proc.nest == 0 {
 		p.proc.name = it.sym
-		p.proc.start = itemNum
+		p.proc.start = len(p.instructions)
 	} else {
 		err = ErrorListF(ESWarning, "ignoring nested procedure %s", it.sym)
 	}
@@ -423,7 +423,7 @@ func PROC(p *parser, itemNum int, it *item) *ErrorList {
 	return err
 }
 
-func ENDP(p *parser, itemNum int, it *item) *ErrorList {
+func ENDP(p *parser, it *item) *ErrorList {
 	var err *ErrorList
 	if p.proc.nest == 0 {
 		return ErrorListF(ESDebug,
@@ -432,14 +432,14 @@ func ENDP(p *parser, itemNum int, it *item) *ErrorList {
 	} else if p.proc.nest == 1 {
 		err = ErrorListF(ESDebug,
 			"found procedure %s ranging from lex items #%d-#%d",
-			p.proc.name, p.proc.start, itemNum,
+			p.proc.name, p.proc.start, len(p.instructions),
 		)
 	}
 	p.proc.nest--
 	return err
 }
 
-func MODEL(p *parser, itemNum int, it *item) *ErrorList {
+func MODEL(p *parser, it *item) *ErrorList {
 	var err *ErrorList
 	type modelVals struct {
 		model, codesize, datasize int64
@@ -504,7 +504,7 @@ func MODEL(p *parser, itemNum int, it *item) *ErrorList {
 	return err
 }
 
-func EQUALS(p *parser, itemNum int, it *item) *ErrorList {
+func EQUALS(p *parser, it *item) *ErrorList {
 	ret, err := p.evalInt(it.params[0])
 	if err == nil {
 		return p.syms.Set(it.sym, *ret, false)
@@ -512,7 +512,7 @@ func EQUALS(p *parser, itemNum int, it *item) *ErrorList {
 	return err
 }
 
-func EQU(p *parser, itemNum int, it *item) *ErrorList {
+func EQU(p *parser, it *item) *ErrorList {
 	return p.syms.Set(it.sym, asmExpression(it.params[0]), true)
 }
 
@@ -613,19 +613,19 @@ var ifidnModeMap = map[string]ifidnMode{
 	"IFDIFI": {compareFn: (*parser).isEqualFold, identical: false},
 }
 
-func IFDEF(p *parser, itemNum int, it *item) *ErrorList {
+func IFDEF(p *parser, it *item) *ErrorList {
 	mode := it.val == "IFDEF"
 	val, err := p.syms.Lookup(it.params[0])
 	return err.AddL(p.evalIf((val != nil) == mode))
 }
 
-func IF(p *parser, itemNum int, it *item) *ErrorList {
+func IF(p *parser, it *item) *ErrorList {
 	mode := it.val == "IF"
 	ret, err := p.evalBool(it.params[0])
 	return err.AddL(p.evalIf(ret == mode))
 }
 
-func IFB(p *parser, itemNum int, it *item) *ErrorList {
+func IFB(p *parser, it *item) *ErrorList {
 	mode := it.val == "IFB"
 	ret, err := p.isBlank(it.params[0])
 	if err.Severity() >= ESError {
@@ -634,7 +634,7 @@ func IFB(p *parser, itemNum int, it *item) *ErrorList {
 	return p.evalIf(ret == mode)
 }
 
-func IFIDN(p *parser, itemNum int, it *item) *ErrorList {
+func IFIDN(p *parser, it *item) *ErrorList {
 	mode := ifidnModeMap[it.val]
 	ret, err := mode.compareFn(p, it.params[0], it.params[1])
 	if err.Severity() >= ESError {
@@ -643,19 +643,19 @@ func IFIDN(p *parser, itemNum int, it *item) *ErrorList {
 	return p.evalIf(ret == mode.identical)
 }
 
-func ELSEIFDEF(p *parser, itemNum int, it *item) *ErrorList {
+func ELSEIFDEF(p *parser, it *item) *ErrorList {
 	mode := it.val == "ELSEIFDEF"
 	val, err := p.syms.Lookup(it.params[0])
 	return err.AddL(p.evalElseif(it.val, (val != nil) == mode))
 }
 
-func ELSEIF(p *parser, itemNum int, it *item) *ErrorList {
+func ELSEIF(p *parser, it *item) *ErrorList {
 	mode := it.val == "ELSEIF"
 	ret, err := p.evalBool(it.params[0])
 	return err.AddL(p.evalElseif(it.val, ret == mode))
 }
 
-func ELSEIFB(p *parser, itemNum int, it *item) *ErrorList {
+func ELSEIFB(p *parser, it *item) *ErrorList {
 	mode := it.val == "ELSEIFB"
 	ret, err := p.isBlank(it.params[0])
 	if err.Severity() >= ESError {
@@ -664,7 +664,7 @@ func ELSEIFB(p *parser, itemNum int, it *item) *ErrorList {
 	return p.evalElseif(it.val, ret == mode)
 }
 
-func ELSEIFIDN(p *parser, itemNum int, it *item) *ErrorList {
+func ELSEIFIDN(p *parser, it *item) *ErrorList {
 	mode := ifidnModeMap[it.val[4:]]
 	ret, err := mode.compareFn(p, it.params[0], it.params[1])
 	if err.Severity() >= ESError {
@@ -673,11 +673,11 @@ func ELSEIFIDN(p *parser, itemNum int, it *item) *ErrorList {
 	return p.evalElseif(it.val, ret == mode.identical)
 }
 
-func ELSE(p *parser, itemNum int, it *item) *ErrorList {
+func ELSE(p *parser, it *item) *ErrorList {
 	return p.evalElseif("ELSE", true)
 }
 
-func ENDIF(p *parser, itemNum int, it *item) *ErrorList {
+func ENDIF(p *parser, it *item) *ErrorList {
 	if p.ifNest == 0 {
 		return ErrorListF(ESWarning, "found ENDIF without a matching condition")
 	}
@@ -689,7 +689,7 @@ func ENDIF(p *parser, itemNum int, it *item) *ErrorList {
 	return nil
 }
 
-func OPTION(p *parser, itemNum int, it *item) *ErrorList {
+func OPTION(p *parser, it *item) *ErrorList {
 	var options = map[string](map[string]func()){
 		"CASEMAP": {
 			"NONE":      func() { p.syms.CaseSensitive = true },
@@ -714,20 +714,21 @@ func OPTION(p *parser, itemNum int, it *item) *ErrorList {
 	return nil
 }
 
-func MACRO(p *parser, itemNum int, it *item) *ErrorList {
+func MACRO(p *parser, it *item) *ErrorList {
 	if p.macro.nest == 0 {
 		p.macro.name = it.sym
-		p.macro.start = itemNum
+		p.macro.start = len(p.instructions)
 	}
 	p.macro.nest++
 	return nil
 }
 
-func ENDM(p *parser, itemNum int, it *item) *ErrorList {
+func ENDM(p *parser, it *item) *ErrorList {
 	var macro asmMacro
 	var err *ErrorList
 	if p.macro.nest == 1 && p.macro.name != "" {
-		if macro, err = p.newMacro(itemNum); err.Severity() < ESError {
+		macro, err = p.newMacro(len(p.instructions))
+		if err.Severity() < ESError {
 			err = err.AddL(p.syms.Set(p.macro.name, macro, false))
 		}
 		p.macro.name = ""
@@ -737,7 +738,7 @@ func ENDM(p *parser, itemNum int, it *item) *ErrorList {
 }
 
 // Placeholder for any non-MACRO block terminated with ENDM
-func DummyMacro(p *parser, itemNum int, it *item) *ErrorList {
+func DummyMacro(p *parser, it *item) *ErrorList {
 	p.macro.nest++
 	return nil
 }
@@ -810,12 +811,12 @@ func (p *parser) setCPU(directive string) *ErrorList {
 	return err
 }
 
-func CPU(p *parser, itemNum int, it *item) *ErrorList {
+func CPU(p *parser, it *item) *ErrorList {
 	// No difference between P or . as the first character, so...
 	return p.setCPU(it.val[1:])
 }
 
-func SEGMENT(p *parser, itemNum int, it *item) *ErrorList {
+func SEGMENT(p *parser, it *item) *ErrorList {
 	cpuWordSize := uint(p.syms.Map["@WORDSIZE"].Val.(asmInt).n) // can never fail
 	seg := &asmSegment{}
 	var errList *ErrorList
@@ -865,7 +866,7 @@ func SEGMENT(p *parser, itemNum int, it *item) *ErrorList {
 	return errList.AddL(p.syms.Set(it.sym, seg, false))
 }
 
-func ENDS(p *parser, itemNum int, it *item) *ErrorList {
+func ENDS(p *parser, it *item) *ErrorList {
 	if p.seg != nil && p.syms.Equal(p.seg.name, it.sym) {
 		var err *ErrorList
 		if p.struc != nil {
@@ -889,7 +890,7 @@ func ENDS(p *parser, itemNum int, it *item) *ErrorList {
 	return ErrorListF(ESError, "unmatched ENDS: %s", it.sym)
 }
 
-func DATA(p *parser, itemNum int, it *item) *ErrorList {
+func DATA(p *parser, it *item) *ErrorList {
 	var widthMap = map[string]uint{
 		"DB": 1, "DW": 2, "DD": 4, "DF": 6, "DP": 6, "DQ": 8, "DT": 10,
 	}
@@ -900,7 +901,7 @@ func DATA(p *parser, itemNum int, it *item) *ErrorList {
 	return nil
 }
 
-func LABEL(p *parser, itemNum int, it *item) *ErrorList {
+func LABEL(p *parser, it *item) *ErrorList {
 	size, err := p.evalInt(it.params[0])
 	if size != nil && p.seg != nil {
 		ptr := asmDataPtr{seg: p.seg, off: -1, w: uint(size.n)}
@@ -935,7 +936,7 @@ func (p *parser) eval(it *item) {
 				)
 			} else if k.Parse != nil {
 				if err = it.checkSyntaxFor(k); err.Severity() < ESError {
-					err = k.Parse(p, len(p.instructions), it)
+					err = k.Parse(p, it)
 					ret = typ&Conditional == 0
 				}
 			}

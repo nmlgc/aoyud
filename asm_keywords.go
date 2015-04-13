@@ -22,8 +22,8 @@ const (
 )
 
 type Keyword struct {
-	Lex        func(l *lexer, it *item) *ErrorList               // Function to run at lexing time.
-	Parse      func(p *parser, itemNum int, it *item) *ErrorList // Function to run at parsing time.
+	Lex        func(l *lexer, it *item) *ErrorList  // Function to run at lexing time.
+	Parse      func(p *parser, it *item) *ErrorList // Function to run at parsing time.
 	Type       KeywordType
 	Sym        SymRule
 	ParamRange Range
