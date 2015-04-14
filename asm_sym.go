@@ -3,6 +3,8 @@
 package main
 
 import (
+	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -22,6 +24,19 @@ func (s Symbol) String() string {
 type SymMap struct {
 	Map           map[string]Symbol
 	CaseSensitive bool
+}
+
+func (s SymMap) String() (ret string) {
+	var keys []string
+	for i := range s.Map {
+		keys = append(keys, i)
+	}
+	sort.Strings(keys)
+	ret += "Symbols: [\n"
+	for _, k := range keys {
+		ret += fmt.Sprintf("• %s: %s", k, s.Map[k])
+	}
+	return ret + "]"
 }
 
 func (s *SymMap) ToSymCase(str string) string {

@@ -5,7 +5,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -978,18 +977,5 @@ func (p *parser) end() {
 	}
 	if p.proc.nest != 0 {
 		log.Printf("ignoring procedure %s without an ENDP directive", p.proc.name)
-	}
-	if len(p.syms.Map) > 0 {
-		var keys []string
-		for i := range p.syms.Map {
-			keys = append(keys, i)
-		}
-		sort.Strings(keys)
-		log.Println("Symbols: [")
-		log.SetPrefix("")
-		for _, k := range keys {
-			log.Printf("• %s: %s", k, p.syms.Map[k])
-		}
-		log.Println("]")
 	}
 }

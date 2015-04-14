@@ -315,4 +315,5 @@ func main() {
 		fmt.Println(i)
 	}
 	p.end()
+	PosNull.ErrorPrint(ErrorListF(ESDebug, "%s", p.syms))
 }
