@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 )
@@ -960,9 +959,8 @@ func NewParser(syntax string) *parser {
 }
 
 func (p *parser) end() {
-	defer log.SetPrefix(log.Prefix())
-	log.SetPrefix("(EOF): ")
-
+	empty := ""
+	posEOF := ItemPos{SourcePos{filename: &empty, line: 0}}
 	var err *ErrorList
 	if p.struc != nil {
 		err = err.AddL(ErrorListOpen(p.struc))
@@ -970,12 +968,10 @@ func (p *parser) end() {
 	if p.segNest != 0 {
 		err = err.AddL(ErrorListOpen(p.seg))
 	}
-	if err != nil {
-		for _, e := range *err {
-			log.Println(e.s)
-		}
-	}
 	if p.proc.nest != 0 {
-		log.Printf("ignoring procedure %s without an ENDP directive", p.proc.name)
+		err = err.AddF(ESWarning,
+			"ignoring procedure without an ENDP directive: %s", p.proc.name,
+		)
 	}
+	posEOF.ErrorPrint(err)
 }

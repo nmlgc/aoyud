@@ -17,11 +17,15 @@ import (
 
 type SourcePos struct {
 	filename *string
-	line     uint
+	line     uint // 0 = EOF
 }
 
 func (p SourcePos) String() string {
-	return fmt.Sprintf("%s(%d):", *p.filename, p.line)
+	if p.line == 0 {
+		return fmt.Sprintf("%s(EOF):", *p.filename)
+	} else {
+		return fmt.Sprintf("%s(%d):", *p.filename, p.line)
+	}
 }
 
 type ItemPos []SourcePos
