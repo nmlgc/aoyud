@@ -13,30 +13,20 @@ type printlnFn func(*log.Logger, ...interface{})
 
 var codeLogger = log.New(os.Stderr, "", 0)
 
-var PosNull *ItemPos = nil
-
-// ErrorPrint pretty-prints the given error list, using the position p for any
-// error that does not have a set position. Call this method on PosNull to not
-// print any default position.
-func (p *ItemPos) ErrorPrint(err *ErrorList) {
-	if err != nil {
-		for _, e := range *err {
-			fn := codeLogger.Println
-			if e.sev == ESFatal {
-				fn = codeLogger.Fatalln
-			}
-
-			var posstr string
-			sevstr := e.sev.String()
-			if e.pos != nil {
-				posstr = e.pos.String()
-			} else {
-				posstr = p.String()
-			}
-			posstr = strings.Replace(
-				posstr, "\n", "\n"+strings.Repeat(" ", len(sevstr)), -1,
-			)
-			fn(sevstr + posstr + e.s)
+// Print pretty-prints the given error list.
+func (e *ErrorList) Print() {
+	if e == nil {
+		return
+	}
+	for _, err := range *e {
+		fn := codeLogger.Println
+		if err.sev == ESFatal {
+			fn = codeLogger.Fatalln
 		}
+		sevstr := err.sev.String()
+		posstr := strings.Replace(
+			err.pos.String(), "\n", "\n"+strings.Repeat(" ", len(sevstr)), -1,
+		)
+		fn(sevstr + posstr + err.s)
 	}
 }

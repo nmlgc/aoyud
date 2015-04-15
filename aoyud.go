@@ -208,8 +208,10 @@ func (l *lexer) newInstruction(sym, val string) {
 		l.emit(&l.curInst)
 	}
 	if err != nil {
-		l.curInst.pos[0].line = l.stream.line
-		l.curInst.pos.ErrorPrint(err)
+		for i := range *err {
+			(*err)[i].pos = &ItemPos{SourcePos{filename: l.filename, line: l.stream.line}}
+		}
+		err.Print()
 	}
 	l.curInst.sym = sym
 	l.curInst.val = val
@@ -307,17 +309,12 @@ func main() {
 	kingpin.Parse()
 
 	l, err := lexFile(*filename, *includes)
-	if err != nil {
-		PosNull.ErrorPrint(err)
-	}
-	p := NewParser(*syntax)
+	err.Print()
+	p, err := Parse(l, *syntax)
+	err.Print()
 
-	for i := range l.items {
-		p.eval(&i)
-	}
 	for _, i := range p.instructions {
 		fmt.Println(i)
 	}
-	p.end()
-	PosNull.ErrorPrint(ErrorListF(ESDebug, "%s", p.syms))
+	ErrorListF(ESDebug, "%s", p.syms).Print()
 }

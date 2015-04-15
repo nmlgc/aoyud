@@ -46,9 +46,20 @@ func (e *ErrorList) createIfNecessary() *ErrorList {
 
 // AddL appends an existing error list to e, and returns e itself.
 func (e *ErrorList) AddL(err *ErrorList) *ErrorList {
+	return e.AddLAt(nil, err)
+}
+
+// AddLAt appends an existing error list at the given code position to e, and
+// returns e itself.
+func (e *ErrorList) AddLAt(pos *ItemPos, err *ErrorList) *ErrorList {
 	if err != nil {
 		e = e.createIfNecessary()
 		*e = append(*e, (*err)...)
+		for i := len(*e) - len(*err); i < len(*e); i++ {
+			if (*e)[i].pos == nil {
+				(*e)[i].pos = pos
+			}
+		}
 	}
 	return e
 }

@@ -339,7 +339,7 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 		for p := range m.code[i].params {
 			expanded.params[p] = replace(&m.code[i], m.code[i].params[p])
 		}
-		p.eval(&expanded)
+		errList = errList.AddLAt(&expanded.pos, p.eval(&expanded))
 	}
 	return false, errList
 }
@@ -425,7 +425,7 @@ func ENDP(p *parser, it *item) *ErrorList {
 	var err *ErrorList
 	if p.proc.nest == 0 {
 		return ErrorListF(ESDebug,
-			"ignoring procedure %s without a PROC directive", it.sym,
+			"ignoring procedure without a PROC directive: %s", it.sym,
 		)
 	} else if p.proc.nest == 1 {
 		err = ErrorListF(ESDebug,
@@ -911,7 +911,7 @@ func LABEL(p *parser, it *item) *ErrorList {
 // eval evaluates the given item, updates the parse state accordingly, and
 // keeps it in the parser's instruction list, unless it lies on an ignored
 // conditional branch.
-func (p *parser) eval(it *item) {
+func (p *parser) eval(it *item) (err *ErrorList) {
 	var typ KeywordType = 0
 	k, ok := Keywords[it.val]
 	if ok {
@@ -922,7 +922,6 @@ func (p *parser) eval(it *item) {
 	}
 	ret := true
 	if typ&Macro != 0 || p.macro.nest == 0 {
-		var err *ErrorList
 		if ok {
 			if typ&Emit != 0 && p.seg == nil && p.struc == nil {
 				err = ErrorListF(ESError,
@@ -945,33 +944,39 @@ func (p *parser) eval(it *item) {
 				ret, err = p.expandMacro(insSym.(asmMacro), it)
 			}
 		}
-		it.pos.ErrorPrint(err)
 	}
 	if ret {
 		p.instructions = append(p.instructions, *it)
 	}
+	return err
 }
 
-func NewParser(syntax string) *parser {
-	p := &parser{syntax: syntax, syms: *NewSymMap()}
+func Parse(l *lexer, syntax string) (p *parser, err *ErrorList) {
+	p = &parser{syntax: syntax, syms: *NewSymMap()}
 	p.setCPU("8086")
-	return p
-}
 
-func (p *parser) end() {
+	for i := range l.items {
+		evalErr := p.eval(&i)
+		if evalErr != nil {
+			// Yes, i is always at the same memory location, so this is indeed
+			// necessary.
+			posCopy := i.pos
+			err = err.AddLAt(&posCopy, evalErr)
+		}
+	}
+
 	empty := ""
-	posEOF := ItemPos{SourcePos{filename: &empty, line: 0}}
-	var err *ErrorList
+	posEOF := &ItemPos{SourcePos{filename: &empty, line: 0}}
 	if p.struc != nil {
-		err = err.AddL(ErrorListOpen(p.struc))
+		err = err.AddLAt(posEOF, ErrorListOpen(p.struc))
 	}
 	if p.segNest != 0 {
-		err = err.AddL(ErrorListOpen(p.seg))
+		err = err.AddLAt(posEOF, ErrorListOpen(p.seg))
 	}
 	if p.proc.nest != 0 {
-		err = err.AddF(ESWarning,
+		err = err.AddFAt(posEOF, ESWarning,
 			"ignoring procedure without an ENDP directive: %s", p.proc.name,
 		)
 	}
-	posEOF.ErrorPrint(err)
+	return p, err
 }
