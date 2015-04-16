@@ -107,47 +107,46 @@ func (it *item) checkParamRange(r Range) *ErrorList {
 	return nil
 }
 
-type lexer struct {
-	stream   lexStream
-	filename *string
-	paths    []string  // search paths for relative includes
-	curInst  item      // current instruction being built
-	items    chan item // channel of scanned items
+type parseFile struct {
+	stream lexStream
+	name   *string
+	paths  []string   // search paths for relative includes
+	prev   *parseFile // file that included this one, or nil for the main file
 }
 
-type stateFn func(*lexer) stateFn
-
-func INCLUDE(l *lexer, it *item) *ErrorList {
-	// Remember to restore the old filename once we're done with this one
-	newL, err := lexFile(it.params[0], l.paths)
-	if err != nil {
-		return err
-	}
-	for i := range newL.items {
-		l.items <- i
-	}
-	return nil
+func INCLUDE(p *parser, it *item) *ErrorList {
+	return p.StepIntoFile(it.params[0], p.file.paths)
 }
 
-// lexFirst scans labels, the symbol declaration, and the name of the
-// instruction.
-func lexFirst(l *lexer) stateFn {
-	first := l.stream.nextUntil(&insDelim)
+func (f *parseFile) newItem(typ itemType, sym, val string) (ret *item) {
+	return &item{
+		typ: typ,
+		sym: sym,
+		val: val,
+		pos: ItemPos{SourcePos{filename: f.name, line: f.stream.line}},
+	}
+}
+
+// lexItem scans and returns the next item from the currently parsed file.
+func (p *parser) lexItem() (ret *item) {
+	var secondRule SymRule
+
+	first := p.file.stream.nextUntil(&insDelim)
+
+	// Handle one-char instructions
+	switch p.file.stream.peek() {
 	// Label?
-	if l.stream.peek() == ':' {
-		l.stream.next()
-		l.emitItem(&item{typ: itemLabel, sym: first})
-		return lexFirst
-	} else
+	case ':':
+		p.file.stream.next()
+		return p.file.newItem(itemLabel, first, "")
 	// Assignment? (Needs to be a special case because = doesn't need to be
 	// surrounded by spaces, and nextUntil() isn't designed to handle that.)
-	if l.stream.peek() == '=' {
-		l.newInstruction(first, string(l.stream.next()))
-		return lexParam
+	case '=':
+		p.file.stream.next()
+		return p.lexParam(p.file.newItem(itemInstruction, first, "="))
 	}
 
-	var secondRule SymRule
-	second := l.stream.peekUntil(&wordDelim)
+	second := p.file.stream.peekUntil(&wordDelim)
 	firstUpper := strings.ToUpper(first)
 	if _, ok := Keywords[firstUpper]; ok {
 		first = firstUpper
@@ -159,86 +158,41 @@ func lexFirst(l *lexer) stateFn {
 		}
 	}
 
-	if secondRule != NotAllowed {
-		l.newInstruction(first, second)
-		l.stream.nextUntil(&wordDelim)
-	} else if firstUpper == "COMMENT" {
-		l.stream.ignore(&whitespace)
-		delim := charGroup{l.stream.next()}
-		l.stream.nextUntil(&delim)
-		l.stream.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
-		return lexFirst
-	} else {
-		l.newInstruction("", first)
+	if firstUpper == "COMMENT" {
+		p.file.stream.ignore(&whitespace)
+		delim := charGroup{p.file.stream.next()}
+		p.file.stream.nextUntil(&delim)
+		p.file.stream.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
+		return nil
+	} else if secondRule != NotAllowed {
+		ret = p.file.newItem(itemInstruction, first, second)
+		p.file.stream.nextUntil(&wordDelim)
+	} else if len(first) > 0 {
+		ret = p.file.newItem(itemInstruction, "", first)
 	}
-	return lexParam
+	return p.lexParam(ret)
 }
 
-// lexParam scans parameters and comments.
-func lexParam(l *lexer) stateFn {
-	if param := l.stream.nextParam(); len(param) > 0 {
-		l.curInst.params = append(l.curInst.params, param)
+// lexParam recursively scans the parameters following the given item and adds
+// them to it.
+func (p *parser) lexParam(it *item) *item {
+	if it != nil {
+		if param := p.file.stream.nextParam(); len(param) > 0 {
+			it.params = append(it.params, param)
+		}
 	}
-	switch l.stream.next() {
+	switch p.file.stream.next() {
 	case ';', '\\':
 		// Comment
-		l.stream.nextUntil(&linebreak)
-		return lexFirst
+		p.file.stream.nextUntil(&linebreak)
 	case '\r', '\n':
-		return lexFirst
+		p.file.stream.ignore(&linebreak)
 	case eof:
-		return nil
+		p.file = p.file.prev
+	default:
+		return p.lexParam(it)
 	}
-	return lexParam
-}
-
-// newInstruction emits the currently cached instruction and starts a new one
-// with the given symbol and value.
-func (l *lexer) newInstruction(sym, val string) {
-	var err *ErrorList
-
-	l.curInst.typ = itemInstruction
-
-	if k, ok := Keywords[l.curInst.val]; ok && k.Lex != nil {
-		err = l.curInst.checkParamRange(k.ParamRange)
-		if err.Severity() < ESError {
-			err = err.AddL(k.Lex(l, &l.curInst))
-		}
-	} else {
-		l.emit(&l.curInst)
-	}
-	if err != nil {
-		for i := range *err {
-			(*err)[i].pos = &ItemPos{SourcePos{filename: l.filename, line: l.stream.line}}
-		}
-		err.Print()
-	}
-	l.curInst.sym = sym
-	l.curInst.val = val
-	l.curInst.params = nil
-}
-
-// emit sets the position of the given item and sends it over the items channel.
-func (l *lexer) emit(it *item) {
-	if len(it.val) > 0 || len(it.sym) > 0 {
-		it.pos = ItemPos{SourcePos{filename: l.filename, line: l.stream.line}}
-		l.items <- *it
-	}
-}
-
-// emitItem emits the currently cached instruction, followed by the given item.
-func (l *lexer) emitItem(it *item) {
-	l.newInstruction("", "")
-	l.emit(it)
-}
-
-// run runs the state machine for the lexer.
-func (l *lexer) run() {
-	for state := lexFirst; state != nil; {
-		state = state(l)
-	}
-	l.newInstruction("", "") // send the currently cached instruction
-	close(l.items)
+	return it
 }
 
 // readFirstFromPaths reads and returns the contents of a file with name
@@ -261,19 +215,17 @@ func readFirstFromPaths(filename string, paths []string) (string, string, *Error
 	)
 }
 
-func lexFile(filename string, paths []string) (*lexer, *ErrorList) {
+func (p *parser) StepIntoFile(filename string, paths []string) *ErrorList {
 	bytes, fullname, err := readFirstFromPaths(filename, paths)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		p.file = &parseFile{
+			name:   &filename,
+			stream: *newLexStream(bytes),
+			paths:  append(paths, filepath.Dir(fullname)),
+			prev:   p.file,
+		}
 	}
-	l := &lexer{
-		filename: &filename,
-		stream:   *newLexStream(bytes),
-		items:    make(chan item),
-		paths:    append(paths, filepath.Dir(fullname)),
-	}
-	go l.run()
-	return l, nil
+	return err
 }
 
 func (it item) String() string {
@@ -308,9 +260,7 @@ func main() {
 
 	kingpin.Parse()
 
-	l, err := lexFile(*filename, *includes)
-	err.Print()
-	p, err := Parse(l, *syntax)
+	p, err := Parse(*filename, *syntax, *includes)
 	err.Print()
 
 	for _, i := range p.instructions {

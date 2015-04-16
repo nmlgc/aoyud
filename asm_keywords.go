@@ -3,13 +3,14 @@ package main
 type KeywordType int
 
 const (
-	EmitData    KeywordType = (1 << iota) // Emits data into the program image
-	EmitCode                = (1 << iota) // Emits code into the program image
-	CodeBlock               = (1 << iota) // Can't appear inside a STRUC or UNION
-	Conditional             = (1 << iota) // Not kept in the parser's instruction list
-	Macro                   = (1 << iota)
+	EmitData  KeywordType = (1 << iota) // Emits data into the program image
+	EmitCode              = (1 << iota) // Emits code into the program image
+	CodeBlock             = (1 << iota) // Can't appear inside a STRUC or UNION
+	Evaluated             = (1 << iota) // Not kept in the parser's instruction list
+	Macro                 = (1 << iota)
 
-	Emit = EmitData | EmitCode
+	Conditional = (1 << iota) | Evaluated
+	Emit        = EmitData | EmitCode
 )
 
 // SymRule states whether a keyword can, must, or can't have a symbol name.
@@ -22,10 +23,9 @@ const (
 )
 
 type Keyword struct {
-	Lex        func(l *lexer, it *item) *ErrorList  // Function to run at lexing time.
-	Parse      func(p *parser, it *item) *ErrorList // Function to run at parsing time.
-	Type       KeywordType
+	Func       func(p *parser, it *item) *ErrorList
 	Sym        SymRule
+	Type       KeywordType
 	ParamRange Range
 }
 
@@ -36,54 +36,54 @@ func init() {
 		return Range{r, r}
 	}
 
-	cpu := Keyword{Parse: CPU, ParamRange: req(0)}
-	data := Keyword{Parse: DATA, Sym: Optional, Type: EmitData, ParamRange: Range{1, -1}}
+	cpu := Keyword{CPU, NotAllowed, 0, req(0)}
+	data := Keyword{DATA, Optional, EmitData, Range{1, -1}}
 
 	Keywords = map[string]Keyword{
-		"INCLUDE": {Lex: INCLUDE, ParamRange: req(1)},
-		"PROC":    {Parse: PROC, Sym: Mandatory, Type: CodeBlock, ParamRange: Range{0, -1}},
-		"ENDP":    {Parse: ENDP, Sym: Optional, Type: CodeBlock, ParamRange: req(0)},
-		".MODEL":  {Parse: MODEL, Type: CodeBlock, ParamRange: Range{1, 6}},
+		"INCLUDE": {INCLUDE, NotAllowed, Evaluated, req(1)},
+		"PROC":    {PROC, Mandatory, CodeBlock, Range{0, -1}},
+		"ENDP":    {ENDP, Optional, CodeBlock, req(0)},
+		".MODEL":  {MODEL, NotAllowed, CodeBlock, Range{1, 6}},
 		// Equates
-		"=":       {Parse: EQUALS, Sym: Mandatory, ParamRange: req(1)},
-		"EQU":     {Parse: EQU, Sym: Mandatory, ParamRange: Range{1, -1}},
-		"TEXTEQU": {Sym: Mandatory, ParamRange: req(1)}, // TODO
-		"TYPEDEF": {Sym: Mandatory, ParamRange: req(1)}, // TODO
-		"LABEL":   {Parse: LABEL, Sym: Mandatory, ParamRange: req(1)},
+		"=":       {EQUALS, Mandatory, 0, req(1)},
+		"EQU":     {EQU, Mandatory, 0, Range{1, -1}},
+		"TEXTEQU": {nil, Mandatory, 0, req(1)}, // TODO
+		"TYPEDEF": {nil, Mandatory, 0, req(1)}, // TODO
+		"LABEL":   {LABEL, Mandatory, 0, req(1)},
 		// Conditionals
-		"IFDEF":      {Parse: IFDEF, Type: Conditional, ParamRange: req(1)},
-		"IFNDEF":     {Parse: IFDEF, Type: Conditional, ParamRange: req(1)},
-		"IF":         {Parse: IF, Type: Conditional, ParamRange: req(1)},
-		"IFE":        {Parse: IF, Type: Conditional, ParamRange: req(1)},
-		"IFB":        {Parse: IFB, Type: Conditional, ParamRange: req(1)},
-		"IFNB":       {Parse: IFB, Type: Conditional, ParamRange: req(1)},
-		"IFIDN":      {Parse: IFIDN, Type: Conditional, ParamRange: req(2)},
-		"IFIDNI":     {Parse: IFIDN, Type: Conditional, ParamRange: req(2)},
-		"IFDIF":      {Parse: IFIDN, Type: Conditional, ParamRange: req(2)},
-		"IFDIFI":     {Parse: IFIDN, Type: Conditional, ParamRange: req(2)},
-		"ELSEIFDEF":  {Parse: ELSEIFDEF, Type: Conditional, ParamRange: req(1)},
-		"ELSEIFNDEF": {Parse: ELSEIFDEF, Type: Conditional, ParamRange: req(1)},
-		"ELSEIF":     {Parse: ELSEIF, Type: Conditional, ParamRange: req(1)},
-		"ELSEIFE":    {Parse: ELSEIF, Type: Conditional, ParamRange: req(1)},
-		"ELSEIFB":    {Parse: ELSEIFB, Type: Conditional, ParamRange: req(1)},
-		"ELSEIFNB":   {Parse: ELSEIFB, Type: Conditional, ParamRange: req(1)},
-		"ELSEIFIDN":  {Parse: ELSEIFIDN, Type: Conditional, ParamRange: req(2)},
-		"ELSEIFIDNI": {Parse: ELSEIFIDN, Type: Conditional, ParamRange: req(2)},
-		"ELSEIFDIF":  {Parse: ELSEIFIDN, Type: Conditional, ParamRange: req(2)},
-		"ELSEIFDIFI": {Parse: ELSEIFIDN, Type: Conditional, ParamRange: req(2)},
-		"ELSE":       {Parse: ELSE, Type: Conditional, ParamRange: req(0)},
-		"ENDIF":      {Parse: ENDIF, Type: Conditional, ParamRange: req(0)},
-		"OPTION":     {Parse: OPTION, ParamRange: Range{1, -1}},
+		"IFDEF":      {IFDEF, NotAllowed, Conditional, req(1)},
+		"IFNDEF":     {IFDEF, NotAllowed, Conditional, req(1)},
+		"IF":         {IF, NotAllowed, Conditional, req(1)},
+		"IFE":        {IF, NotAllowed, Conditional, req(1)},
+		"IFB":        {IFB, NotAllowed, Conditional, req(1)},
+		"IFNB":       {IFB, NotAllowed, Conditional, req(1)},
+		"IFIDN":      {IFIDN, NotAllowed, Conditional, req(2)},
+		"IFIDNI":     {IFIDN, NotAllowed, Conditional, req(2)},
+		"IFDIF":      {IFIDN, NotAllowed, Conditional, req(2)},
+		"IFDIFI":     {IFIDN, NotAllowed, Conditional, req(2)},
+		"ELSEIFDEF":  {ELSEIFDEF, NotAllowed, Conditional, req(1)},
+		"ELSEIFNDEF": {ELSEIFDEF, NotAllowed, Conditional, req(1)},
+		"ELSEIF":     {ELSEIF, NotAllowed, Conditional, req(1)},
+		"ELSEIFE":    {ELSEIF, NotAllowed, Conditional, req(1)},
+		"ELSEIFB":    {ELSEIFB, NotAllowed, Conditional, req(1)},
+		"ELSEIFNB":   {ELSEIFB, NotAllowed, Conditional, req(1)},
+		"ELSEIFIDN":  {ELSEIFIDN, NotAllowed, Conditional, req(2)},
+		"ELSEIFIDNI": {ELSEIFIDN, NotAllowed, Conditional, req(2)},
+		"ELSEIFDIF":  {ELSEIFIDN, NotAllowed, Conditional, req(2)},
+		"ELSEIFDIFI": {ELSEIFIDN, NotAllowed, Conditional, req(2)},
+		"ELSE":       {ELSE, NotAllowed, Conditional, req(0)},
+		"ENDIF":      {ENDIF, NotAllowed, Conditional, req(0)},
+		"OPTION":     {OPTION, NotAllowed, 0, Range{1, -1}},
 		// Macros
-		"MACRO":  {Parse: MACRO, Sym: Mandatory, Type: Macro, ParamRange: Range{0, -1}},
-		"FOR":    {Parse: DummyMacro, Type: Macro, ParamRange: req(2)},
-		"FORC":   {Parse: DummyMacro, Type: Macro, ParamRange: Range{1, -1}}, // see JWasm's FORC.ASM
-		"REPT":   {Parse: DummyMacro, Type: Macro, ParamRange: req(1)},
-		"REPEAT": {Parse: DummyMacro, Type: Macro, ParamRange: req(1)},
-		"WHILE":  {Parse: DummyMacro, Type: Macro, ParamRange: req(1)},
-		"IRP":    {Parse: DummyMacro, Type: Macro, ParamRange: req(2)},
-		"IRPC":   {Parse: DummyMacro, Type: Macro, ParamRange: req(2)},
-		"ENDM":   {Parse: ENDM, Type: Macro, ParamRange: req(0)},
+		"MACRO":  {MACRO, Mandatory, Macro, Range{0, -1}},
+		"FOR":    {DummyMacro, NotAllowed, Macro, req(2)},
+		"FORC":   {DummyMacro, NotAllowed, Macro, Range{1, -1}}, // see JWasm's FORC.ASM
+		"REPT":   {DummyMacro, NotAllowed, Macro, req(1)},
+		"REPEAT": {DummyMacro, NotAllowed, Macro, req(1)},
+		"WHILE":  {DummyMacro, NotAllowed, Macro, req(1)},
+		"IRP":    {DummyMacro, NotAllowed, Macro, req(2)},
+		"IRPC":   {DummyMacro, NotAllowed, Macro, req(2)},
+		"ENDM":   {ENDM, NotAllowed, Macro, req(0)},
 		// CPUs
 		".8086": cpu, "P8086": cpu,
 		".186": cpu, "P186": cpu,
@@ -112,9 +112,9 @@ func init() {
 		// support those directives.
 
 		// Segments
-		"SEGMENT": {Parse: SEGMENT, Sym: Mandatory, Type: CodeBlock, ParamRange: Range{0, 1}},
-		"ENDS":    {Parse: ENDS, Sym: Optional, ParamRange: req(0)},
-		"GROUP":   {Sym: Mandatory, ParamRange: req(1)}, // TODO
+		"SEGMENT": {SEGMENT, Mandatory, CodeBlock, Range{0, 1}},
+		"ENDS":    {ENDS, Optional, 0, req(0)},
+		"GROUP":   {nil, Mandatory, 0, req(1)}, // TODO
 		// Data allocations
 		"DB": data,
 		"DW": data,
@@ -124,13 +124,13 @@ func init() {
 		"DP": data,
 		"DT": data,
 		// Structures
-		"STRUCT": {Parse: STRUC, Sym: Optional, ParamRange: Range{0, 2}}, // Yes, it's possible to have
-		"STRUC":  {Parse: STRUC, Sym: Optional, ParamRange: Range{0, 2}}, // unnamed structures and
-		"UNION":  {Parse: STRUC, Sym: Optional, ParamRange: Range{0, 2}}, // unions inside named ones.
+		"STRUCT": {STRUC, Optional, 0, Range{0, 2}}, // Yes, it's possible to have
+		"STRUC":  {STRUC, Optional, 0, Range{0, 2}}, // unnamed structures and
+		"UNION":  {STRUC, Optional, 0, Range{0, 2}}, // unions inside named ones.
 		// String functions (all TODO)
-		"CATSTR":  {Sym: Mandatory, ParamRange: Range{1, -1}},
-		"SIZESTR": {Sym: Mandatory, ParamRange: req(1)},
-		"INSTR":   {Sym: Mandatory, ParamRange: Range{2, 3}},
-		"SUBSTR":  {Sym: Mandatory, ParamRange: Range{2, 3}},
+		"CATSTR":  {nil, Mandatory, 0, Range{1, -1}},
+		"SIZESTR": {nil, Mandatory, 0, req(1)},
+		"INSTR":   {nil, Mandatory, 0, Range{2, 3}},
+		"SUBSTR":  {nil, Mandatory, 0, Range{2, 3}},
 	}
 }

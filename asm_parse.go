@@ -368,6 +368,7 @@ func ErrorListOpen(block Nestable) *ErrorList {
 type parser struct {
 	instructions []item
 	// General state
+	file            *parseFile
 	syntax          string
 	syms            SymMap
 	macroLocalCount int // Number of LOCAL directives expanded
@@ -909,8 +910,7 @@ func LABEL(p *parser, it *item) *ErrorList {
 }
 
 // eval evaluates the given item, updates the parse state accordingly, and
-// keeps it in the parser's instruction list, unless it lies on an ignored
-// conditional branch.
+// keeps it in the parser's instruction list if necessary.
 func (p *parser) eval(it *item) (err *ErrorList) {
 	var typ KeywordType = 0
 	k, ok := Keywords[it.val]
@@ -931,10 +931,10 @@ func (p *parser) eval(it *item) (err *ErrorList) {
 				err = ErrorListF(ESError,
 					"%s not allowed inside structure definition", it.val,
 				)
-			} else if k.Parse != nil {
+			} else if k.Func != nil {
 				if err = it.checkSyntaxFor(k); err.Severity() < ESError {
-					err = k.Parse(p, it)
-					ret = typ&Conditional == 0
+					err = k.Func(p, it)
+					ret = typ&Evaluated == 0
 				}
 			}
 		} else // Dropping the error on unknown directives/symbols for now
@@ -951,22 +951,21 @@ func (p *parser) eval(it *item) (err *ErrorList) {
 	return err
 }
 
-func Parse(l *lexer, syntax string) (p *parser, err *ErrorList) {
-	p = &parser{syntax: syntax, syms: *NewSymMap()}
+func Parse(filename string, syntax string, includePaths []string) (*parser, *ErrorList) {
+	var evalErr *ErrorList
+	p := &parser{syntax: syntax, syms: *NewSymMap()}
 	p.setCPU("8086")
 
-	for i := range l.items {
-		evalErr := p.eval(&i)
-		if evalErr != nil {
-			// Yes, i is always at the same memory location, so this is indeed
-			// necessary.
-			posCopy := i.pos
-			err = err.AddLAt(&posCopy, evalErr)
+	err := p.StepIntoFile(filename, includePaths)
+
+	for p.file != nil && evalErr.Severity() < ESFatal {
+		if it := p.lexItem(); it != nil {
+			evalErr = p.eval(it)
+			err = err.AddLAt(&it.pos, evalErr)
 		}
 	}
 
-	empty := ""
-	posEOF := &ItemPos{SourcePos{filename: &empty, line: 0}}
+	posEOF := &ItemPos{SourcePos{filename: &filename, line: 0}}
 	if p.struc != nil {
 		err = err.AddLAt(posEOF, ErrorListOpen(p.struc))
 	}
