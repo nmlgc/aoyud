@@ -44,6 +44,10 @@ func (p *ItemPos) String() string {
 	return ret + " "
 }
 
+func NewItemPos(filename *string, line uint) *ItemPos {
+	return &ItemPos{SourcePos{filename: filename, line: line}}
+}
+
 type itemParams []string
 
 func (p itemParams) String() string {
@@ -119,12 +123,8 @@ func INCLUDE(p *parser, it *item) *ErrorList {
 }
 
 func (f *parseFile) newItem(typ itemType, sym, val string) (ret *item) {
-	return &item{
-		typ: typ,
-		sym: sym,
-		val: val,
-		pos: ItemPos{SourcePos{filename: f.name, line: f.stream.line}},
-	}
+	pos := NewItemPos(f.name, f.stream.line)
+	return &item{pos: *pos, typ: typ, sym: sym, val: val}
 }
 
 // lexItem scans and returns the next item from the currently parsed file.

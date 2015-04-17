@@ -965,7 +965,7 @@ func Parse(filename string, syntax string, includePaths []string) (*parser, *Err
 		}
 	}
 
-	posEOF := &ItemPos{SourcePos{filename: &filename, line: 0}}
+	posEOF := NewItemPos(&filename, 0)
 	if p.struc != nil {
 		err = err.AddLAt(posEOF, ErrorListOpen(p.struc))
 	}
