@@ -6,8 +6,7 @@ var linebreak = charGroup{'\r', '\n'}
 var whitespace = charGroup{' ', '\t'}
 var quotes = charGroup{'\'', '"'}
 var paramDelim = append(charGroup{',', ';'}, linebreak...)
-var wordDelim = append(append(charGroup{':'}, whitespace...), paramDelim...)
-var insDelim = append(charGroup{'='}, wordDelim...)
+var insDelim = append(append(charGroup{':', '='}, whitespace...), paramDelim...)
 var shuntDelim = append(charGroup{
 	'+', '-', '*', '/', '|', '(', ')', '[', ']', '<', '>', ':', '&', '"', '\'',
 }, whitespace...)

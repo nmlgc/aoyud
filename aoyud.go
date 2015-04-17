@@ -132,6 +132,7 @@ func (p *parser) lexItem() (ret *item) {
 	var secondRule SymRule
 
 	first := p.file.stream.nextUntil(&insDelim)
+	p.file.stream.ignore(&whitespace)
 
 	// Handle one-char instructions
 	switch p.file.stream.peek() {
@@ -146,7 +147,7 @@ func (p *parser) lexItem() (ret *item) {
 		return p.lexParam(p.file.newItem(itemInstruction, first, "="))
 	}
 
-	second := p.file.stream.peekUntil(&wordDelim)
+	second := p.file.stream.peekUntil(&insDelim)
 	firstUpper := strings.ToUpper(first)
 	if _, ok := Keywords[firstUpper]; ok {
 		first = firstUpper
@@ -159,14 +160,13 @@ func (p *parser) lexItem() (ret *item) {
 	}
 
 	if firstUpper == "COMMENT" {
-		p.file.stream.ignore(&whitespace)
 		delim := charGroup{p.file.stream.next()}
 		p.file.stream.nextUntil(&delim)
 		p.file.stream.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
 		return nil
 	} else if secondRule != NotAllowed {
 		ret = p.file.newItem(itemInstruction, first, second)
-		p.file.stream.nextUntil(&wordDelim)
+		p.file.stream.nextUntil(&insDelim)
 	} else if len(first) > 0 {
 		ret = p.file.newItem(itemInstruction, "", first)
 	}
