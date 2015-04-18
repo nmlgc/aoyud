@@ -952,15 +952,16 @@ func (p *parser) eval(it *item) (err *ErrorList) {
 }
 
 func Parse(filename string, syntax string, includePaths []string) (*parser, *ErrorList) {
-	var evalErr *ErrorList
 	p := &parser{syntax: syntax, syms: *NewSymMap()}
 	p.setCPU("8086")
 
 	err := p.StepIntoFile(filename, includePaths)
 
-	for p.file != nil && evalErr.Severity() < ESFatal {
-		if it := p.lexItem(); it != nil {
-			evalErr = p.eval(it)
+	for p.file != nil && err.Severity() < ESFatal {
+		it, lexErr := p.lexItem()
+		err = err.AddL(lexErr)
+		if it != nil && lexErr.Severity() < ESFatal {
+			evalErr := p.eval(it)
 			err = err.AddLAt(&it.pos, evalErr)
 		}
 	}

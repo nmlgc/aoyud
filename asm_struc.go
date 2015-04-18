@@ -69,7 +69,7 @@ func STRUC(p *parser, it *item) *ErrorList {
 	} else if err := it.missingRequiredSym(); err != nil {
 		return err
 	}
-	struc := &asmStruc{
+	struc := asmStruc{
 		name: sym,
 		flag: sStruc,
 		prev: p.struc,
@@ -80,6 +80,6 @@ func STRUC(p *parser, it *item) *ErrorList {
 	if p.struc == nil && struc.name != "" {
 		err = p.syms.Set(struc.name, struc, true)
 	}
-	p.struc = struc
+	p.struc = &struc
 	return err
 }

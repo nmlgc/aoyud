@@ -122,16 +122,14 @@ func INCLUDE(p *parser, it *item) *ErrorList {
 	return p.StepIntoFile(it.params[0], p.file.paths)
 }
 
-func (f *parseFile) newItem(typ itemType, sym, val string) (ret *item) {
-	pos := NewItemPos(f.name, f.stream.line)
-	return &item{pos: *pos, typ: typ, sym: sym, val: val}
-}
-
-// lexItem scans and returns the next item from the currently parsed file.
-func (p *parser) lexItem() (ret *item) {
+// lexItem scans and returns the next item from the currently parsed file. All
+// errors in the returned list are already assigned to their correct position.
+func (p *parser) lexItem() (ret *item, err *ErrorList) {
 	var secondRule SymRule
+	var val asmVal
 
 	first := p.file.stream.nextUntil(&insDelim)
+	pos := NewItemPos(p.file.name, p.file.stream.line)
 	p.file.stream.ignore(&whitespace)
 
 	// Handle one-char instructions
@@ -139,23 +137,40 @@ func (p *parser) lexItem() (ret *item) {
 	// Label?
 	case ':':
 		p.file.stream.next()
-		return p.file.newItem(itemLabel, first, "")
+		return &item{pos: *pos, typ: itemLabel, sym: first}, nil
 	// Assignment? (Needs to be a special case because = doesn't need to be
 	// surrounded by spaces, and nextUntil() isn't designed to handle that.)
 	case '=':
 		p.file.stream.next()
-		return p.lexParam(p.file.newItem(itemInstruction, first, "="))
+		ret := &item{pos: *pos, typ: itemInstruction, sym: first, val: "="}
+		return p.lexParam(ret), nil
 	}
 
 	second := p.file.stream.peekUntil(&insDelim)
 	firstUpper := strings.ToUpper(first)
+	secondUpper := strings.ToUpper(second)
 	if _, ok := Keywords[firstUpper]; ok {
 		first = firstUpper
-	} else {
-		secondUpper := strings.ToUpper(second)
-		if k, ok := Keywords[secondUpper]; ok {
-			second = secondUpper
-			secondRule = k.Sym
+	} else if k, ok := Keywords[secondUpper]; ok {
+		second = secondUpper
+		secondRule = k.Sym
+	} else if val, err = p.syms.Lookup(first); val != nil {
+		switch val.(type) {
+		case asmExpression:
+			// TODO: Well, "expressions" can be anything, both syntactically
+			// valid and invalid…
+		case asmStruc:
+		case asmMacro:
+			break
+		default:
+			err = err.AddFAt(pos, ESError,
+				"%s not allowed here: %s", val.Thing(), first,
+			)
+		}
+	} else if val, err = p.syms.Lookup(second); val != nil {
+		switch val.(type) {
+		case asmStruc:
+			secondRule = Optional
 		}
 	}
 
@@ -163,14 +178,14 @@ func (p *parser) lexItem() (ret *item) {
 		delim := charGroup{p.file.stream.next()}
 		p.file.stream.nextUntil(&delim)
 		p.file.stream.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
-		return nil
+		return nil, nil
 	} else if secondRule != NotAllowed {
-		ret = p.file.newItem(itemInstruction, first, second)
+		ret = &item{pos: *pos, typ: itemInstruction, sym: first, val: second}
 		p.file.stream.nextUntil(&insDelim)
 	} else if len(first) > 0 {
-		ret = p.file.newItem(itemInstruction, "", first)
+		ret = &item{pos: *pos, typ: itemInstruction, val: first}
 	}
-	return p.lexParam(ret)
+	return p.lexParam(ret), err
 }
 
 // lexParam recursively scans the parameters following the given item and adds
