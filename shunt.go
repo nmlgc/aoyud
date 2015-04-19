@@ -162,13 +162,13 @@ var binaryOperators = shuntOpMap{
 
 // nextShuntToken returns the next operand or operator from s. Only operators
 // in opSet are identified as such.
-func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (asmVal, *ErrorList) {
-	token := s.nextToken(&shuntDelim)
+func (s *SymMap) nextShuntToken(stream *lexStream, opSet *shuntOpMap) (asmVal, *ErrorList) {
+	token := stream.nextToken(&shuntDelim)
 	if isAsmInt(token) {
 		return newAsmInt(token)
 	} else if quote := token[0]; quotes.matches(quote) && len(token) == 1 {
-		token = s.nextUntil(&charGroup{quote})
-		err := s.nextAssert(quote, token)
+		token = stream.nextUntil(&charGroup{quote})
+		err := stream.nextAssert(quote, token)
 		return asmString(token), err
 	}
 	tokenUpper := strings.ToUpper(token)
@@ -177,7 +177,7 @@ func (p *parser) nextShuntToken(s *lexStream, opSet *shuntOpMap) (asmVal, *Error
 	} else if nextOp, ok := (*opSet)[tokenUpper]; ok {
 		return &nextOp, nil
 	}
-	return p.syms.Get(token)
+	return s.Get(token)
 }
 
 // pushOp evaluates newOp, a newly incoming operator, in relation to the
@@ -217,26 +217,27 @@ type shuntState struct {
 	opSet    *shuntOpMap
 }
 
-func (p *parser) shuntLoop(s *shuntState, expr string) *ErrorList {
-	var err *ErrorList
+func (s *SymMap) shuntLoop(state *shuntState, expr string) (err *ErrorList) {
 	var token asmVal
 	stream := newLexStream(expr)
 	for stream.peek() != eof && err == nil {
-		token, err = p.nextShuntToken(stream, s.opSet)
+		token, err = s.nextShuntToken(stream, state.opSet)
 		if err.Severity() >= ESError {
 			return err
 		}
 		switch token.(type) {
 		case asmInt:
-			s.retStack.push(token.(asmInt))
-			s.opSet = &binaryOperators
+			state.retStack.push(token.(asmInt))
+			state.opSet = &binaryOperators
 		case asmString:
-			s.retStack.push(token.(asmString))
-			s.opSet = &binaryOperators
+			state.retStack.push(token.(asmString))
+			state.opSet = &binaryOperators
 		case *shuntOp:
-			s.opSet, err = s.retStack.pushOp(&s.opStack, token.(*shuntOp))
+			state.opSet, err = state.retStack.pushOp(
+				&state.opStack, token.(*shuntOp),
+			)
 		case asmExpression:
-			err = p.shuntLoop(s, string(token.(asmExpression)))
+			err = s.shuntLoop(state, string(token.(asmExpression)))
 		default:
 			err = err.AddF(ESError,
 				"can't use %s in arithmetic expression", token.Thing(),
@@ -248,21 +249,20 @@ func (p *parser) shuntLoop(s *shuntState, expr string) *ErrorList {
 }
 
 // shunt converts the arithmetic expression in expr into an RPN stack.
-func (p *parser) shunt(expr string) (*shuntStack, *ErrorList) {
-	var err *ErrorList
-	s := &shuntState{opSet: &unaryOperators}
-	if err = p.shuntLoop(s, expr); err != nil {
+func (s *SymMap) shunt(expr string) (stack *shuntStack, err *ErrorList) {
+	state := &shuntState{opSet: &unaryOperators}
+	if err = s.shuntLoop(state, expr); err != nil {
 		return nil, err
 	}
-	for top := s.opStack.peek(); top != nil; top = s.opStack.peek() {
-		s.opStack.pop()
+	for top := state.opStack.peek(); top != nil; top = state.opStack.peek() {
+		state.opStack.pop()
 		if top.(*shuntOp).id == opParenL {
 			err = err.AddF(ESError, "missing a right parenthesis")
 		} else {
-			s.retStack.push(top)
+			state.retStack.push(top)
 		}
 	}
-	return &s.retStack, err
+	return &state.retStack, err
 }
 
 // solve evaluates the RPN stack s and returns the result.
@@ -284,8 +284,8 @@ func (s shuntStack) solve() (*asmInt, *ErrorList) {
 }
 
 // evalInt wraps shunt and solve.
-func (p *parser) evalInt(expr string) (*asmInt, *ErrorList) {
-	rpnStack, err := p.shunt(expr)
+func (s *SymMap) evalInt(expr string) (*asmInt, *ErrorList) {
+	rpnStack, err := s.shunt(expr)
 	if err == nil {
 		return rpnStack.solve()
 	}
@@ -293,8 +293,8 @@ func (p *parser) evalInt(expr string) (*asmInt, *ErrorList) {
 }
 
 // evalBool wraps evalInt and casts its result to a bool.
-func (p *parser) evalBool(expr string) (bool, *ErrorList) {
-	ret, err := p.evalInt(expr)
+func (s *SymMap) evalBool(expr string) (bool, *ErrorList) {
+	ret, err := s.evalInt(expr)
 	if err == nil {
 		return ret.n != 0, err
 	}

@@ -504,7 +504,7 @@ func MODEL(p *parser, it *item) *ErrorList {
 }
 
 func EQUALS(p *parser, it *item) *ErrorList {
-	ret, err := p.evalInt(it.params[0])
+	ret, err := p.syms.evalInt(it.params[0])
 	if err == nil {
 		return p.syms.Set(it.sym, *ret, false)
 	}
@@ -620,7 +620,7 @@ func IFDEF(p *parser, it *item) *ErrorList {
 
 func IF(p *parser, it *item) *ErrorList {
 	mode := it.val == "IF"
-	ret, err := p.evalBool(it.params[0])
+	ret, err := p.syms.evalBool(it.params[0])
 	return err.AddL(p.evalIf(ret == mode))
 }
 
@@ -650,7 +650,7 @@ func ELSEIFDEF(p *parser, it *item) *ErrorList {
 
 func ELSEIF(p *parser, it *item) *ErrorList {
 	mode := it.val == "ELSEIF"
-	ret, err := p.evalBool(it.params[0])
+	ret, err := p.syms.evalBool(it.params[0])
 	return err.AddL(p.evalElseif(it.val, ret == mode))
 }
 
@@ -901,7 +901,7 @@ func DATA(p *parser, it *item) *ErrorList {
 }
 
 func LABEL(p *parser, it *item) *ErrorList {
-	size, err := p.evalInt(it.params[0])
+	size, err := p.syms.evalInt(it.params[0])
 	if size != nil && p.seg != nil {
 		ptr := asmDataPtr{seg: p.seg, off: -1, w: uint(size.n)}
 		return err.AddL(p.syms.Set(it.sym, ptr, true))
