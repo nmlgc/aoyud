@@ -160,6 +160,7 @@ func (p *parser) lexItem() (ret *item, err *ErrorList) {
 			// TODO: Well, "expressions" can be anything, both syntactically
 			// valid and invalid…
 		case asmStruc:
+		case asmDataPtr: // These can be redefined with an identical value.
 		case asmMacro:
 			break
 		default:

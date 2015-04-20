@@ -818,23 +818,20 @@ func CPU(p *parser, it *item) *ErrorList {
 func SEGMENT(p *parser, it *item) *ErrorList {
 	cpuWordSize := uint(p.syms.Map["@WORDSIZE"].Val.(asmInt).n) // can never fail
 	seg := &asmSegment{}
+	var old asmVal
 	var errList *ErrorList
 	var attributes = map[string]func(){
 		"USE16": func() { seg.wordsize = 2 },
 		"USE32": func() { seg.wordsize = 4 },
 		"USE64": func() { seg.wordsize = 8 },
 	}
-	if old, errList := p.syms.Lookup(it.sym); old != nil {
+	if old, errList = p.syms.Lookup(it.sym); old != nil {
 		switch old.(type) {
 		case *asmSegment:
 			seg = old.(*asmSegment)
 		default:
-			// Could be a warning, but will most likely lead to another
-			// nesting error.
-			return errList.AddF(ESError,
-				"cannot redeclare %s as a segment, ignoring: %s",
-				old.Thing(), it.sym,
-			)
+			// SymMap.Set handles this error message. Just continuing to
+			// create the segment as normal certainly leads to fewer errors.
 		}
 	} else {
 		seg.wordsize = cpuWordSize

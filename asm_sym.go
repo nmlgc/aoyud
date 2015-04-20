@@ -4,12 +4,13 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 )
 
 type Symbol struct {
-	Constant bool
+	Constant bool // Constness of the stored value.
 	Val      asmVal
 }
 
@@ -85,13 +86,36 @@ func (s *SymMap) Get(name string) (asmVal, *ErrorList) {
 }
 
 func (s *SymMap) Set(name string, val asmVal, constant bool) *ErrorList {
-	// TODO: Enforce constness for EQU while making sure that the cases in
-	// JWasm's EQUATE6.ASM still work.
+	// Maybe the asmVal interface should have received a Equal()
+	// method, but given the fact that most types are constant anyway…
+	redefinable := func(a, b asmVal) bool {
+		switch a.(type) {
+		case asmInt:
+			a, b := a.(asmInt), b.(asmInt)
+			return a.n == b.n && a.ptr == b.ptr
+		case asmDataPtr:
+			a, b := a.(asmDataPtr), b.(asmDataPtr)
+			return a.seg == b.seg && a.off == b.off && a.w == b.w
+		}
+		return false
+	}
+
 	realName := s.ToSymCase(name)
-	if existing := s.Map[realName]; existing.Constant {
-		return ErrorListF(ESError,
-			"constant symbol already defined elsewhere: %s", realName,
-		)
+	if existing := s.Map[realName]; existing.Val != nil {
+		fail := func() (err *ErrorList) {
+			err = err.AddF(ESError,
+				"symbol already defined as %s: %s",
+				existing.Val.Thing(), realName,
+			)
+			return err.AddF(ESError,
+				"\t(previous value: %s)", existing.Val.String(),
+			)
+		}
+		if reflect.TypeOf(existing.Val) != reflect.TypeOf(val) {
+			return fail()
+		} else if existing.Constant && !redefinable(existing.Val, val) {
+			return fail()
+		}
 	}
 	s.Map[realName] = Symbol{Val: val, Constant: constant}
 	return nil
