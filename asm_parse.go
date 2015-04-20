@@ -511,8 +511,25 @@ func EQUALS(p *parser, it *item) *ErrorList {
 	return err
 }
 
-func EQU(p *parser, it *item) *ErrorList {
-	return p.syms.Set(it.sym, asmExpression(it.params[0]), true)
+func EQU(p *parser, it *item) (err *ErrorList) {
+	var existing asmVal
+	tryNumber := true
+	if existing, err = p.syms.Lookup(it.sym); existing != nil {
+		switch existing.(type) {
+		case asmInt:
+			tryNumber = true
+		default:
+			tryNumber = false
+		}
+	}
+	if tryNumber {
+		number, numberErr := p.syms.evalInt(it.params[0])
+		if numberErr.Severity() < ESError {
+			err = err.AddL(numberErr)
+			return err.AddL(p.syms.Set(it.sym, *number, true))
+		}
+	}
+	return p.syms.Set(it.sym, asmExpression(it.params[0]), false)
 }
 
 // text evaluates s as a text string used in a conditional directive.
