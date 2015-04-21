@@ -330,6 +330,7 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 		posCopy := make(ItemPos, len(it.pos), len(it.pos)+len(m.code[i].pos))
 		copy(posCopy, it.pos)
 		expanded := item{
+			num:    len(p.instructions),
 			pos:    append(posCopy, m.code[i].pos...),
 			typ:    m.code[i].typ,
 			sym:    replace(&m.code[i], m.code[i].sym),
@@ -414,7 +415,7 @@ func PROC(p *parser, it *item) *ErrorList {
 	var err *ErrorList
 	if p.proc.nest == 0 {
 		p.proc.name = it.sym
-		p.proc.start = len(p.instructions)
+		p.proc.start = it.num
 	} else {
 		err = ErrorListF(ESWarning, "ignoring nested procedure %s", it.sym)
 	}
@@ -431,7 +432,7 @@ func ENDP(p *parser, it *item) *ErrorList {
 	} else if p.proc.nest == 1 {
 		err = ErrorListF(ESDebug,
 			"found procedure %s ranging from lex items #%d-#%d",
-			p.proc.name, p.proc.start, len(p.instructions),
+			p.proc.name, p.proc.start, it.num,
 		)
 	}
 	p.proc.nest--
@@ -733,7 +734,7 @@ func OPTION(p *parser, it *item) *ErrorList {
 func MACRO(p *parser, it *item) *ErrorList {
 	if p.macro.nest == 0 {
 		p.macro.name = it.sym
-		p.macro.start = len(p.instructions)
+		p.macro.start = it.num
 	}
 	p.macro.nest++
 	return nil
@@ -743,7 +744,7 @@ func ENDM(p *parser, it *item) *ErrorList {
 	var macro asmMacro
 	var err *ErrorList
 	if p.macro.nest == 1 && p.macro.name != "" {
-		macro, err = p.newMacro(len(p.instructions))
+		macro, err = p.newMacro(it.num)
 		if err.Severity() < ESError {
 			err = err.AddL(p.syms.Set(p.macro.name, macro, false))
 		}
@@ -975,6 +976,7 @@ func Parse(filename string, syntax string, includePaths []string) (*parser, *Err
 		it, lexErr := p.lexItem()
 		err = err.AddL(lexErr)
 		if it != nil && lexErr.Severity() < ESFatal {
+			it.num = len(p.instructions)
 			evalErr := p.eval(it)
 			err = err.AddLAt(&it.pos, evalErr)
 		}

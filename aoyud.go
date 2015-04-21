@@ -56,6 +56,7 @@ func (p itemParams) String() string {
 
 // item represents a token or text string returned from the scanner.
 type item struct {
+	num    int        // # of this item within the entire code; filled in by the parser.
 	pos    ItemPos    // Code position of this item and the macros it came from.
 	typ    itemType   // The type of this item
 	sym    string     // Optional symbol name
