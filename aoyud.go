@@ -123,31 +123,31 @@ func INCLUDE(p *parser, it *item) *ErrorList {
 	return p.StepIntoFile(it.params[0], p.file.paths)
 }
 
-// lexItem scans and returns the next item from the currently parsed file. All
-// errors in the returned list are already assigned to their correct position.
-func (p *parser) lexItem() (ret *item, err *ErrorList) {
+// lexItem scans and returns the next item from the given stream. All errors
+// in the returned list are already assigned to their correct position.
+func (p *parser) lexItem(stream *lexStream) (ret *item, err *ErrorList) {
 	var secondRule SymRule
 	var val asmVal
 
-	first := p.file.stream.nextUntil(&insDelim)
-	pos := NewItemPos(p.file.name, p.file.stream.line)
-	p.file.stream.ignore(&whitespace)
+	first := stream.nextUntil(&insDelim)
+	pos := NewItemPos(p.file.name, stream.line)
+	stream.ignore(&whitespace)
 
 	// Handle one-char instructions
-	switch p.file.stream.peek() {
+	switch stream.peek() {
 	// Label?
 	case ':':
-		p.file.stream.next()
+		stream.next()
 		return &item{pos: *pos, typ: itemLabel, sym: first}, nil
 	// Assignment? (Needs to be a special case because = doesn't need to be
 	// surrounded by spaces, and nextUntil() isn't designed to handle that.)
 	case '=':
-		p.file.stream.next()
+		stream.next()
 		ret := &item{pos: *pos, typ: itemInstruction, sym: first, val: "="}
-		return p.lexParam(ret), nil
+		return p.lexParam(stream, ret), nil
 	}
 
-	second := p.file.stream.peekUntil(&insDelim)
+	second := stream.peekUntil(&insDelim)
 	firstUpper := strings.ToUpper(first)
 	secondUpper := strings.ToUpper(second)
 	if _, ok := Keywords[firstUpper]; ok {
@@ -177,37 +177,37 @@ func (p *parser) lexItem() (ret *item, err *ErrorList) {
 	}
 
 	if firstUpper == "COMMENT" {
-		delim := charGroup{p.file.stream.next()}
-		p.file.stream.nextUntil(&delim)
-		p.file.stream.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
+		delim := charGroup{stream.next()}
+		stream.nextUntil(&delim)
+		stream.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
 		return nil, nil
 	} else if secondRule != NotAllowed {
 		ret = &item{pos: *pos, typ: itemInstruction, sym: first, val: second}
-		p.file.stream.nextUntil(&insDelim)
+		stream.nextUntil(&insDelim)
 	} else if len(first) > 0 {
 		ret = &item{pos: *pos, typ: itemInstruction, val: first}
 	}
-	return p.lexParam(ret), err
+	return p.lexParam(stream, ret), err
 }
 
-// lexParam recursively scans the parameters following the given item and adds
-// them to it.
-func (p *parser) lexParam(it *item) *item {
+// lexParam recursively scans the parameters following the given item from the
+// given stream and adds them to it.
+func (p *parser) lexParam(stream *lexStream, it *item) *item {
 	if it != nil {
-		if param := p.file.stream.nextParam(); len(param) > 0 {
+		if param := stream.nextParam(); len(param) > 0 {
 			it.params = append(it.params, param)
 		}
 	}
-	switch p.file.stream.next() {
+	switch stream.next() {
 	case ';', '\\':
 		// Comment
-		p.file.stream.nextUntil(&linebreak)
+		stream.nextUntil(&linebreak)
 	case '\r', '\n':
-		p.file.stream.ignore(&linebreak)
+		stream.ignore(&linebreak)
 	case eof:
 		p.file = p.file.prev
 	default:
-		return p.lexParam(it)
+		return p.lexParam(stream, it)
 	}
 	return it
 }

@@ -973,7 +973,7 @@ func Parse(filename string, syntax string, includePaths []string) (*parser, *Err
 	err := p.StepIntoFile(filename, includePaths)
 
 	for p.file != nil && err.Severity() < ESFatal {
-		it, lexErr := p.lexItem()
+		it, lexErr := p.lexItem(&p.file.stream)
 		err = err.AddL(lexErr)
 		if it != nil && lexErr.Severity() < ESFatal {
 			it.num = len(p.instructions)
