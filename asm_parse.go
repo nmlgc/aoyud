@@ -276,7 +276,7 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 	replace := func(it *item, s string) string {
 		ret := ""
 		andCached := false
-		for stream := newLexStream(s); stream.peek() != eof; {
+		for stream := NewLexStreamAt(it.pos, s); stream.peek() != eof; {
 			// Be sure to copy any whitespace in s.
 			start := stream.c
 			stream.ignore(&whitespace)
@@ -505,7 +505,7 @@ func MODEL(p *parser, it *item) *ErrorList {
 }
 
 func EQUALS(p *parser, it *item) *ErrorList {
-	ret, err := p.syms.evalInt(it.params[0])
+	ret, err := p.syms.evalInt(it.pos, it.params[0])
 	if err == nil {
 		return p.syms.Set(it.sym, *ret, false)
 	}
@@ -524,7 +524,7 @@ func EQU(p *parser, it *item) (err *ErrorList) {
 		}
 	}
 	if tryNumber {
-		number, numberErr := p.syms.evalInt(it.params[0])
+		number, numberErr := p.syms.evalInt(it.pos, it.params[0])
 		if numberErr.Severity() < ESError {
 			err = err.AddL(numberErr)
 			return err.AddL(p.syms.Set(it.sym, *number, true))
@@ -638,7 +638,7 @@ func IFDEF(p *parser, it *item) *ErrorList {
 
 func IF(p *parser, it *item) *ErrorList {
 	mode := it.val == "IF"
-	ret, err := p.syms.evalBool(it.params[0])
+	ret, err := p.syms.evalBool(it.pos, it.params[0])
 	return err.AddL(p.evalIf(ret == mode))
 }
 
@@ -668,7 +668,7 @@ func ELSEIFDEF(p *parser, it *item) *ErrorList {
 
 func ELSEIF(p *parser, it *item) *ErrorList {
 	mode := it.val == "ELSEIF"
-	ret, err := p.syms.evalBool(it.params[0])
+	ret, err := p.syms.evalBool(it.pos, it.params[0])
 	return err.AddL(p.evalElseif(it.val, ret == mode))
 }
 
@@ -856,7 +856,7 @@ func SEGMENT(p *parser, it *item) *ErrorList {
 		seg.name = it.sym
 	}
 	if len(it.params) > 0 {
-		for stream := newLexStream(it.params[0]); stream.peek() != eof; {
+		for stream := NewLexStreamAt(it.pos, it.params[0]); stream.peek() != eof; {
 			param, err := stream.nextSegmentParam()
 			errList = errList.AddL(err)
 			if attrib, ok := attributes[strings.ToUpper(param)]; ok {
@@ -916,7 +916,7 @@ func DATA(p *parser, it *item) *ErrorList {
 }
 
 func LABEL(p *parser, it *item) *ErrorList {
-	size, err := p.syms.evalInt(it.params[0])
+	size, err := p.syms.evalInt(it.pos, it.params[0])
 	if size != nil && p.seg != nil {
 		ptr := asmDataPtr{seg: p.seg, off: -1, w: uint(size.n)}
 		return err.AddL(p.syms.Set(it.sym, ptr, true))

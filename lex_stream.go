@@ -43,7 +43,7 @@ func (g *charGroup) matches(b byte) bool {
 type lexStream struct {
 	input string
 	c     int // Current character within the input string
-	line  uint
+	pos   ItemPos
 }
 
 const eof = 0
@@ -59,6 +59,7 @@ func (s *lexStream) ignore(delim *charGroup) {
 // peek returns but does not consume the next byte in the input.
 func (s *lexStream) peek() byte {
 	if s.c >= len(s.input) {
+		s.pos[len(s.pos)-1].line = 0
 		return eof
 	}
 	return s.input[s.c]
@@ -69,7 +70,7 @@ func (s *lexStream) next() byte {
 	ret := s.peek()
 	s.c++
 	if ret == '\n' {
-		s.line++
+		s.pos[len(s.pos)-1].line++
 	}
 	return ret
 }
@@ -165,6 +166,14 @@ func (s *lexStream) nextParam() string {
 	return s.input[start:s.c]
 }
 
-func newLexStream(input string) *lexStream {
-	return &lexStream{input: input, line: 1}
+// NewLexStream creates a new lex stream at the start of the given file.
+func NewLexStream(filename *string, input string) *lexStream {
+	return &lexStream{pos: NewItemPos(filename, 1), input: input}
+}
+
+// NewLexStreamAt creates a new lex stream at the given position.
+func NewLexStreamAt(pos ItemPos, input string) *lexStream {
+	var posCopy ItemPos
+	posCopy = append(posCopy, pos...)
+	return &lexStream{pos: posCopy, input: input}
 }

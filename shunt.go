@@ -217,9 +217,9 @@ type shuntState struct {
 	opSet    *shuntOpMap
 }
 
-func (s *SymMap) shuntLoop(state *shuntState, expr string) (err *ErrorList) {
+func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err *ErrorList) {
 	var token asmVal
-	stream := newLexStream(expr)
+	stream := NewLexStreamAt(pos, expr)
 	for stream.peek() != eof && err == nil {
 		token, err = s.nextShuntToken(stream, state.opSet)
 		if err.Severity() >= ESError {
@@ -237,7 +237,7 @@ func (s *SymMap) shuntLoop(state *shuntState, expr string) (err *ErrorList) {
 				&state.opStack, token.(*shuntOp),
 			)
 		case asmExpression:
-			err = s.shuntLoop(state, string(token.(asmExpression)))
+			err = s.shuntLoop(state, pos, string(token.(asmExpression)))
 		default:
 			err = err.AddF(ESError,
 				"can't use %s in arithmetic expression", token.Thing(),
@@ -249,9 +249,9 @@ func (s *SymMap) shuntLoop(state *shuntState, expr string) (err *ErrorList) {
 }
 
 // shunt converts the arithmetic expression in expr into an RPN stack.
-func (s *SymMap) shunt(expr string) (stack *shuntStack, err *ErrorList) {
+func (s *SymMap) shunt(pos ItemPos, expr string) (stack *shuntStack, err *ErrorList) {
 	state := &shuntState{opSet: &unaryOperators}
-	if err = s.shuntLoop(state, expr); err != nil {
+	if err = s.shuntLoop(state, pos, expr); err != nil {
 		return nil, err
 	}
 	for top := state.opStack.peek(); top != nil; top = state.opStack.peek() {
@@ -284,8 +284,8 @@ func (s shuntStack) solve() (*asmInt, *ErrorList) {
 }
 
 // evalInt wraps shunt and solve.
-func (s *SymMap) evalInt(expr string) (*asmInt, *ErrorList) {
-	rpnStack, err := s.shunt(expr)
+func (s *SymMap) evalInt(pos ItemPos, expr string) (*asmInt, *ErrorList) {
+	rpnStack, err := s.shunt(pos, expr)
 	if err == nil {
 		return rpnStack.solve()
 	}
@@ -293,8 +293,8 @@ func (s *SymMap) evalInt(expr string) (*asmInt, *ErrorList) {
 }
 
 // evalBool wraps evalInt and casts its result to a bool.
-func (s *SymMap) evalBool(expr string) (bool, *ErrorList) {
-	ret, err := s.evalInt(expr)
+func (s *SymMap) evalBool(pos ItemPos, expr string) (bool, *ErrorList) {
+	ret, err := s.evalInt(pos, expr)
 	if err == nil {
 		return ret.n != 0, err
 	}

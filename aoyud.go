@@ -126,9 +126,10 @@ func INCLUDE(p *parser, it *item) *ErrorList {
 func (p *parser) lexItem(stream *lexStream) (ret *item, err *ErrorList) {
 	var secondRule SymRule
 	var val asmVal
+	var pos ItemPos
 
 	first := stream.nextUntil(&insDelim)
-	pos := NewItemPos(p.file.name, stream.line)
+	pos = append(pos, stream.pos...)
 	stream.ignore(&whitespace)
 
 	// Handle one-char instructions
@@ -237,8 +238,7 @@ func (p *parser) StepIntoFile(filename string, paths []string) *ErrorList {
 	bytes, fullname, err := readFirstFromPaths(filename, paths)
 	if err == nil {
 		p.file = &parseFile{
-			name:   &filename,
-			stream: *newLexStream(bytes),
+			stream: *NewLexStream(&filename, bytes),
 			paths:  append(paths, filepath.Dir(fullname)),
 			prev:   p.file,
 		}
