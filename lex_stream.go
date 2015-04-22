@@ -92,6 +92,9 @@ func (s *lexStream) peekUntil(delim *charGroup) string {
 
 // nextUntil consumes the next word that is delimited by the given character group.
 func (s *lexStream) nextUntil(delim *charGroup) string {
+	if s.peek() == eof {
+		return ""
+	}
 	s.ignore(&whitespace)
 	start := s.c
 	for !delim.matches(s.peek()) && s.peek() != eof {

@@ -123,8 +123,9 @@ func INCLUDE(p *parser, it *item) *ErrorList {
 	return p.StepIntoFile(it.params[0], p.file.paths)
 }
 
-// lexItem scans and returns the next item from the given stream. All errors
-// in the returned list are already assigned to their correct position.
+// lexItem scans and returns the next item from the given stream, or nil if
+// the end of the stream has been reached. All errors in the returned list are
+// already assigned to their correct position.
 func (p *parser) lexItem(stream *lexStream) (ret *item, err *ErrorList) {
 	var secondRule SymRule
 	var val asmVal
@@ -144,7 +145,7 @@ func (p *parser) lexItem(stream *lexStream) (ret *item, err *ErrorList) {
 	case '=':
 		stream.next()
 		ret := &item{pos: *pos, typ: itemInstruction, sym: first, val: "="}
-		return p.lexParam(stream, ret), nil
+		return p.lexParam(stream, ret, err)
 	}
 
 	second := stream.peekUntil(&insDelim)
@@ -180,19 +181,19 @@ func (p *parser) lexItem(stream *lexStream) (ret *item, err *ErrorList) {
 		delim := charGroup{stream.next()}
 		stream.nextUntil(&delim)
 		stream.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
-		return nil, nil
+		return p.lexItem(stream)
 	} else if secondRule != NotAllowed {
 		ret = &item{pos: *pos, typ: itemInstruction, sym: first, val: second}
 		stream.nextUntil(&insDelim)
 	} else if len(first) > 0 {
 		ret = &item{pos: *pos, typ: itemInstruction, val: first}
 	}
-	return p.lexParam(stream, ret), err
+	return p.lexParam(stream, ret, err)
 }
 
 // lexParam recursively scans the parameters following the given item from the
 // given stream and adds them to it.
-func (p *parser) lexParam(stream *lexStream, it *item) *item {
+func (p *parser) lexParam(stream *lexStream, it *item, err *ErrorList) (*item, *ErrorList) {
 	if it != nil {
 		if param := stream.nextParam(); len(param) > 0 {
 			it.params = append(it.params, param)
@@ -205,11 +206,14 @@ func (p *parser) lexParam(stream *lexStream, it *item) *item {
 	case '\r', '\n':
 		stream.ignore(&linebreak)
 	case eof:
-		p.file = p.file.prev
+		return it, err
 	default:
-		return p.lexParam(stream, it)
+		return p.lexParam(stream, it, err)
 	}
-	return it
+	if it == nil {
+		return p.lexItem(stream)
+	}
+	return it, err
 }
 
 // readFirstFromPaths reads and returns the contents of a file with name

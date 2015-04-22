@@ -979,6 +979,8 @@ func Parse(filename string, syntax string, includePaths []string) (*parser, *Err
 			it.num = len(p.instructions)
 			evalErr := p.eval(it)
 			err = err.AddLAt(&it.pos, evalErr)
+		} else {
+			p.file = p.file.prev
 		}
 	}
 
