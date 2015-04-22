@@ -30,12 +30,9 @@ func (p SourcePos) String() string {
 
 type ItemPos []SourcePos
 
-func (p *ItemPos) String() string {
+func (p ItemPos) String() string {
 	ret := ""
-	if p == nil {
-		return ret
-	}
-	for i, pos := range *p {
+	for i, pos := range p {
 		if i != 0 {
 			ret += "\n" + strings.Repeat(" ", i)
 		}
@@ -44,8 +41,8 @@ func (p *ItemPos) String() string {
 	return ret + " "
 }
 
-func NewItemPos(filename *string, line uint) *ItemPos {
-	return &ItemPos{SourcePos{filename: filename, line: line}}
+func NewItemPos(filename *string, line uint) ItemPos {
+	return ItemPos{SourcePos{filename: filename, line: line}}
 }
 
 type itemParams []string
@@ -139,12 +136,12 @@ func (p *parser) lexItem(stream *lexStream) (ret *item, err *ErrorList) {
 	// Label?
 	case ':':
 		stream.next()
-		return &item{pos: *pos, typ: itemLabel, sym: first}, nil
+		return &item{pos: pos, typ: itemLabel, sym: first}, nil
 	// Assignment? (Needs to be a special case because = doesn't need to be
 	// surrounded by spaces, and nextUntil() isn't designed to handle that.)
 	case '=':
 		stream.next()
-		ret := &item{pos: *pos, typ: itemInstruction, sym: first, val: "="}
+		ret := &item{pos: pos, typ: itemInstruction, sym: first, val: "="}
 		return p.lexParam(stream, ret, err)
 	}
 
@@ -183,10 +180,10 @@ func (p *parser) lexItem(stream *lexStream) (ret *item, err *ErrorList) {
 		stream.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
 		return p.lexItem(stream)
 	} else if secondRule != NotAllowed {
-		ret = &item{pos: *pos, typ: itemInstruction, sym: first, val: second}
+		ret = &item{pos: pos, typ: itemInstruction, sym: first, val: second}
 		stream.nextUntil(&insDelim)
 	} else if len(first) > 0 {
-		ret = &item{pos: *pos, typ: itemInstruction, val: first}
+		ret = &item{pos: pos, typ: itemInstruction, val: first}
 	}
 	return p.lexParam(stream, ret, err)
 }
@@ -287,5 +284,5 @@ func main() {
 	for _, i := range p.instructions {
 		fmt.Println(i)
 	}
-	ErrorListF(ESDebug, "%s", p.syms).Print()
+	ErrorListFAt(NewItemPos(filename, 0), ESDebug, "%s", p.syms).Print()
 }

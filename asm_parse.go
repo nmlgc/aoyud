@@ -204,7 +204,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 			if i != len(header.params)-1 {
 				// TASM would actually accept this, but we better
 				// complain since it doesn't make sense at all.
-				return asmMacro{}, ErrorListFAt(&header.pos, ESError,
+				return asmMacro{}, ErrorListFAt(header.pos, ESError,
 					"%s:%s must be the last parameter",
 					args[i].name, args[i].typ,
 				)
@@ -218,7 +218,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 				args[i].typ = "="
 				args[i].def = def
 			} else {
-				err = err.AddFAt(&header.pos, ESWarning,
+				err = err.AddFAt(header.pos, ESWarning,
 					"invalid macro argument type: %s", args[i].typ,
 				)
 			}
@@ -236,7 +236,7 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 				code = code[i+1:]
 				i--
 			} else {
-				err = err.AddFAt(&code[i].pos, ESError,
+				err = err.AddFAt(code[i].pos, ESError,
 					"LOCAL directives must come first in a macro body, ignoring: %s",
 					code[i].params.String(),
 				)
@@ -340,7 +340,7 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 		for p := range m.code[i].params {
 			expanded.params[p] = replace(&m.code[i], m.code[i].params[p])
 		}
-		errList = errList.AddLAt(&expanded.pos, p.eval(&expanded))
+		errList = errList.AddLAt(expanded.pos, p.eval(&expanded))
 	}
 	return false, errList
 }
@@ -978,7 +978,7 @@ func Parse(filename string, syntax string, includePaths []string) (*parser, *Err
 		if it != nil && lexErr.Severity() < ESFatal {
 			it.num = len(p.instructions)
 			evalErr := p.eval(it)
-			err = err.AddLAt(&it.pos, evalErr)
+			err = err.AddLAt(it.pos, evalErr)
 		} else {
 			p.file = p.file.prev
 		}

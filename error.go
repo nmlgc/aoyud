@@ -31,7 +31,7 @@ func (sev ErrorSeverity) String() string {
 
 type Error struct {
 	s   string
-	pos *ItemPos // Optionally overrides the default position used for logging.
+	pos ItemPos // Optionally overrides the default position used for logging.
 	sev ErrorSeverity
 }
 
@@ -51,7 +51,7 @@ func (e *ErrorList) AddL(err *ErrorList) *ErrorList {
 
 // AddLAt appends an existing error list at the given code position to e, and
 // returns e itself.
-func (e *ErrorList) AddLAt(pos *ItemPos, err *ErrorList) *ErrorList {
+func (e *ErrorList) AddLAt(pos ItemPos, err *ErrorList) *ErrorList {
 	if err != nil {
 		e = e.createIfNecessary()
 		*e = append(*e, (*err)...)
@@ -71,7 +71,7 @@ func (e *ErrorList) AddF(sev ErrorSeverity, format string, a ...interface{}) *Er
 
 // AddFAt appends a formatted error at the given code position to e, and
 // returns e itself.
-func (e *ErrorList) AddFAt(pos *ItemPos, sev ErrorSeverity, format string, a ...interface{}) *ErrorList {
+func (e *ErrorList) AddFAt(pos ItemPos, sev ErrorSeverity, format string, a ...interface{}) *ErrorList {
 	e = e.createIfNecessary()
 	*e = append(*e, Error{s: fmt.Sprintf(format, a...), pos: pos, sev: sev})
 	return e
@@ -89,7 +89,7 @@ func ErrorListF(sev ErrorSeverity, format string, a ...interface{}) *ErrorList {
 
 // ErrorListFAt creates a new error list with an error from the given format
 // string at the given code position.
-func ErrorListFAt(pos *ItemPos, sev ErrorSeverity, format string, a ...interface{}) *ErrorList {
+func ErrorListFAt(pos ItemPos, sev ErrorSeverity, format string, a ...interface{}) *ErrorList {
 	return &ErrorList{Error{s: fmt.Sprintf(format, a...), pos: pos, sev: sev}}
 }
 
