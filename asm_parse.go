@@ -282,7 +282,7 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 			stream.ignore(&whitespace)
 			ret += s[start:stream.c]
 
-			token := stream.nextToken(&shuntDelim)
+			token := stream.nextToken(&macroDelim)
 			if token == "&" {
 				andCached = true
 				token = ""
@@ -327,20 +327,15 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 		p.macroLocalCount++
 	}
 	for i := range m.code {
-		posCopy := make(ItemPos, len(it.pos), len(it.pos)+len(m.code[i].pos))
-		copy(posCopy, it.pos)
-		expanded := item{
-			num:    len(p.instructions),
-			pos:    append(posCopy, m.code[i].pos...),
-			typ:    m.code[i].typ,
-			sym:    replace(&m.code[i], m.code[i].sym),
-			val:    replace(&m.code[i], m.code[i].val),
-			params: make([]string, len(m.code[i].params)),
+		line := replace(&m.code[i], m.code[i].String())
+		stream := NewLexStreamAt(it.pos, line)
+		stream.pos = append(stream.pos, m.code[i].pos...)
+		expanded, err := p.lexItem(stream)
+		errList = errList.AddL(err)
+		if err.Severity() < ESError {
+			expanded.num = len(p.instructions)
+			errList = errList.AddLAt(expanded.pos, p.eval(expanded))
 		}
-		for p := range m.code[i].params {
-			expanded.params[p] = replace(&m.code[i], m.code[i].params[p])
-		}
-		errList = errList.AddLAt(expanded.pos, p.eval(&expanded))
 	}
 	return false, errList
 }

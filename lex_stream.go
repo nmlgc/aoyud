@@ -10,6 +10,7 @@ var insDelim = append(append(charGroup{':', '='}, whitespace...), paramDelim...)
 var shuntDelim = append(charGroup{
 	'+', '-', '*', '/', '|', '(', ')', '[', ']', '<', '>', ':', '&', '"', '\'',
 }, whitespace...)
+var macroDelim = append(charGroup{','}, shuntDelim...)
 var segmentDelim = append(charGroup{'\'', '"'}, whitespace...)
 
 // nestLevelEnter and nestLevelLeave map the various punctuation marks used in
