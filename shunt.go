@@ -15,27 +15,27 @@ const (
 	opMinus = "-"
 	opMul   = "*"
 	opDiv   = "/"
-	opMod   = "mod"
-	opShL   = "shl"
-	opShR   = "shr"
+	opMod   = "MOD"
+	opShL   = "SHL"
+	opShR   = "SHR"
 
-	opAnd = "and"
-	opOr  = "or"
-	opXor = "xor"
+	opAnd = "AND"
+	opOr  = "OR"
+	opXor = "XOR"
 
-	opEq = "eq"
-	opNe = "ne"
-	opLt = "lt"
-	opLe = "le"
-	opGt = "gt"
-	opGe = "ge"
+	opEq = "EQ"
+	opNe = "NE"
+	opLt = "LT"
+	opLe = "LE"
+	opGt = "GT"
+	opGe = "GE"
 
-	opNot = "not"
+	opNot = "NOT"
 
 	opParenL = "("
 	opParenR = ")"
 
-	opPtr = "ptr"
+	opPtr = "PTR"
 )
 
 type shuntVal interface {
