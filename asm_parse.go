@@ -501,7 +501,7 @@ func MODEL(p *parser, it *item) *ErrorList {
 
 func EQUALS(p *parser, it *item) *ErrorList {
 	ret, err := p.syms.evalInt(it.pos, it.params[0])
-	if err == nil {
+	if err.Severity() < ESError {
 		return p.syms.Set(it.sym, *ret, false)
 	}
 	return err

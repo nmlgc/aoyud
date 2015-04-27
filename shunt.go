@@ -162,18 +162,18 @@ var binaryOperators = shuntOpMap{
 
 // nextShuntToken returns the next operand or operator from s. Only operators
 // in opSet are identified as such.
-func (s *SymMap) nextShuntToken(stream *lexStream, opSet *shuntOpMap) (asmVal, *ErrorList) {
+func (s *SymMap) nextShuntToken(stream *lexStream, opSet *shuntOpMap) (ret asmVal, err *ErrorList) {
 	token := stream.nextToken(&shuntDelim)
 	if isAsmInt(token) {
 		return newAsmInt(token)
 	} else if quote := token[0]; quotes.matches(quote) && len(token) == 1 {
 		token = stream.nextUntil(&charGroup{quote})
-		err := stream.nextAssert(quote, token)
+		err = stream.nextAssert(quote, token)
 		return asmString(token), err
 	}
 	tokenUpper := strings.ToUpper(token)
 	if typ, ok := asmTypes[tokenUpper]; ok {
-		return typ, nil
+		return typ, err
 	} else if nextOp, ok := (*opSet)[tokenUpper]; ok {
 		return &nextOp, nil
 	}
@@ -218,11 +218,11 @@ type shuntState struct {
 }
 
 func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err *ErrorList) {
-	var token asmVal
 	stream := NewLexStreamAt(pos, expr)
-	for stream.peek() != eof && err == nil {
-		token, err = s.nextShuntToken(stream, state.opSet)
-		if err.Severity() >= ESError {
+	for stream.peek() != eof && err.Severity() < ESError {
+		token, errToken := s.nextShuntToken(stream, state.opSet)
+		err = err.AddL(errToken)
+		if errToken.Severity() >= ESError {
 			return err
 		}
 		switch token.(type) {
@@ -233,11 +233,15 @@ func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err *Er
 			state.retStack.push(token.(asmString))
 			state.opSet = &binaryOperators
 		case *shuntOp:
-			state.opSet, err = state.retStack.pushOp(
+			var errOp *ErrorList
+			state.opSet, errOp = state.retStack.pushOp(
 				&state.opStack, token.(*shuntOp),
 			)
+			err.AddL(errOp)
 		case asmExpression:
-			err = s.shuntLoop(state, pos, string(token.(asmExpression)))
+			err = err.AddL(
+				s.shuntLoop(state, pos, string(token.(asmExpression))),
+			)
 		default:
 			err = err.AddF(ESError,
 				"can't use %s in arithmetic expression", token.Thing(),
@@ -251,7 +255,7 @@ func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err *Er
 // shunt converts the arithmetic expression in expr into an RPN stack.
 func (s *SymMap) shunt(pos ItemPos, expr string) (stack *shuntStack, err *ErrorList) {
 	state := &shuntState{opSet: &unaryOperators}
-	if err = s.shuntLoop(state, pos, expr); err != nil {
+	if err = s.shuntLoop(state, pos, expr); err.Severity() >= ESError {
 		return nil, err
 	}
 	for top := state.opStack.peek(); top != nil; top = state.opStack.peek() {
@@ -266,28 +270,28 @@ func (s *SymMap) shunt(pos ItemPos, expr string) (stack *shuntStack, err *ErrorL
 }
 
 // solve evaluates the RPN stack s and returns the result.
-func (s shuntStack) solve() (*asmInt, *ErrorList) {
-	var errList *ErrorList
+func (s shuntStack) solve() (ret *asmInt, err *ErrorList) {
 	retStack := make(shuntStack, 0, cap(s))
 	for _, val := range s {
-		result, err := val.calc(&retStack)
-		if err == nil {
+		result, errCalc := val.calc(&retStack)
+		if errCalc.Severity() < ESError {
 			retStack.push(result)
 		}
-		errList = errList.AddL(err)
+		err = err.AddL(errCalc)
 	}
 	if len(retStack) != 1 {
-		return nil, errList.AddF(ESError, "invalid RPN expression: %s", s)
+		return nil, err.AddF(ESError, "invalid RPN expression: %s", s)
 	}
 	result := retStack[0].(asmInt)
-	return &result, errList
+	return &result, err
 }
 
 // evalInt wraps shunt and solve.
 func (s *SymMap) evalInt(pos ItemPos, expr string) (*asmInt, *ErrorList) {
 	rpnStack, err := s.shunt(pos, expr)
-	if err == nil {
-		return rpnStack.solve()
+	if err.Severity() < ESError {
+		ret, errSolve := rpnStack.solve()
+		return ret, err.AddL(errSolve)
 	}
 	return nil, err
 }
@@ -295,7 +299,7 @@ func (s *SymMap) evalInt(pos ItemPos, expr string) (*asmInt, *ErrorList) {
 // evalBool wraps evalInt and casts its result to a bool.
 func (s *SymMap) evalBool(pos ItemPos, expr string) (bool, *ErrorList) {
 	ret, err := s.evalInt(pos, expr)
-	if err == nil {
+	if err.Severity() < ESError {
 		return ret.n != 0, err
 	}
 	// Default to false in the case of an error... for now, at least.
