@@ -125,7 +125,6 @@ func INCLUDE(p *parser, it *item) ErrorList {
 // already assigned to their correct position.
 func (p *parser) lexItem(stream *lexStream) (ret *item, err ErrorList) {
 	var secondRule SymRule
-	var val asmVal
 	var pos ItemPos
 
 	first := stream.nextUntil(insDelim)
@@ -154,7 +153,8 @@ func (p *parser) lexItem(stream *lexStream) (ret *item, err ErrorList) {
 	} else if k, ok := Keywords[secondUpper]; ok {
 		second = secondUpper
 		secondRule = k.Sym
-	} else if val, err = p.syms.Lookup(first); val != nil {
+	} else if val, errLookup := p.syms.Lookup(first); val != nil {
+		err = err.AddLAt(pos, errLookup)
 		switch val.(type) {
 		case asmExpression:
 			// TODO: Well, "expressions" can be anything, both syntactically
@@ -168,7 +168,8 @@ func (p *parser) lexItem(stream *lexStream) (ret *item, err ErrorList) {
 				"%s not allowed here: %s", val.Thing(), first,
 			)
 		}
-	} else if val, err = p.syms.Lookup(second); val != nil {
+	} else if val, errLookup := p.syms.Lookup(second); val != nil {
+		err = err.AddLAt(pos, errLookup)
 		switch val.(type) {
 		case asmStruc:
 			secondRule = Optional
