@@ -78,7 +78,7 @@ type Range struct {
 
 // checkParamRange returns nil if the number of parameters in the item is
 // within the given range, or an error message if it isn't.
-func (it *item) checkParamRange(r Range) *ErrorList {
+func (it *item) checkParamRange(r Range) ErrorList {
 	var sev ErrorSeverity
 	given := len(it.params)
 	below := given < r.Min
@@ -116,21 +116,21 @@ type parseFile struct {
 	prev   *parseFile // file that included this one, or nil for the main file
 }
 
-func INCLUDE(p *parser, it *item) *ErrorList {
+func INCLUDE(p *parser, it *item) ErrorList {
 	return p.StepIntoFile(it.params[0], p.file.paths)
 }
 
 // lexItem scans and returns the next item from the given stream, or nil if
 // the end of the stream has been reached. All errors in the returned list are
 // already assigned to their correct position.
-func (p *parser) lexItem(stream *lexStream) (ret *item, err *ErrorList) {
+func (p *parser) lexItem(stream *lexStream) (ret *item, err ErrorList) {
 	var secondRule SymRule
 	var val asmVal
 	var pos ItemPos
 
-	first := stream.nextUntil(&insDelim)
+	first := stream.nextUntil(insDelim)
 	pos = append(pos, stream.pos...)
-	stream.ignore(&whitespace)
+	stream.ignore(whitespace)
 
 	// Handle one-char instructions
 	switch stream.peek() {
@@ -146,7 +146,7 @@ func (p *parser) lexItem(stream *lexStream) (ret *item, err *ErrorList) {
 		return p.lexParam(stream, ret, err)
 	}
 
-	second := stream.peekUntil(&insDelim)
+	second := stream.peekUntil(insDelim)
 	firstUpper := strings.ToUpper(first)
 	secondUpper := strings.ToUpper(second)
 	if _, ok := Keywords[firstUpper]; ok {
@@ -177,12 +177,12 @@ func (p *parser) lexItem(stream *lexStream) (ret *item, err *ErrorList) {
 
 	if firstUpper == "COMMENT" {
 		delim := charGroup{stream.next()}
-		stream.nextUntil(&delim)
-		stream.nextUntil(&linebreak) // Yes, everything else on the line is ignored.
+		stream.nextUntil(delim)
+		stream.nextUntil(linebreak) // Yes, everything else on the line is ignored.
 		return p.lexItem(stream)
 	} else if secondRule != NotAllowed {
 		ret = &item{pos: pos, typ: itemInstruction, sym: first, val: second}
-		stream.nextUntil(&insDelim)
+		stream.nextUntil(insDelim)
 	} else if len(first) > 0 {
 		ret = &item{pos: pos, typ: itemInstruction, val: first}
 	}
@@ -191,7 +191,7 @@ func (p *parser) lexItem(stream *lexStream) (ret *item, err *ErrorList) {
 
 // lexParam recursively scans the parameters following the given item from the
 // given stream and adds them to it.
-func (p *parser) lexParam(stream *lexStream, it *item, err *ErrorList) (*item, *ErrorList) {
+func (p *parser) lexParam(stream *lexStream, it *item, err ErrorList) (*item, ErrorList) {
 	if it != nil {
 		if param := stream.nextParam(); len(param) > 0 {
 			it.params = append(it.params, param)
@@ -200,9 +200,9 @@ func (p *parser) lexParam(stream *lexStream, it *item, err *ErrorList) (*item, *
 	switch stream.next() {
 	case ';', '\\':
 		// Comment
-		stream.nextUntil(&linebreak)
+		stream.nextUntil(linebreak)
 	case '\r', '\n':
-		stream.ignore(&linebreak)
+		stream.ignore(linebreak)
 	case eof:
 		return it, err
 	default:
@@ -218,7 +218,7 @@ func (p *parser) lexParam(stream *lexStream, it *item, err *ErrorList) (*item, *
 // filename from the first directory in the given list that contains such a
 // file, the full path to the file that was read, as well as any error that
 // occurred.
-func readFirstFromPaths(filename string, paths []string) (string, string, *ErrorList) {
+func readFirstFromPaths(filename string, paths []string) (string, string, ErrorList) {
 	for _, path := range paths {
 		fullname := filepath.Join(path, filename)
 		bytes, err := ioutil.ReadFile(fullname)
@@ -234,7 +234,7 @@ func readFirstFromPaths(filename string, paths []string) (string, string, *Error
 	)
 }
 
-func (p *parser) StepIntoFile(filename string, paths []string) *ErrorList {
+func (p *parser) StepIntoFile(filename string, paths []string) ErrorList {
 	bytes, fullname, err := readFirstFromPaths(filename, paths)
 	if err == nil {
 		p.file = &parseFile{

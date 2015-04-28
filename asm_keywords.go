@@ -23,7 +23,7 @@ const (
 )
 
 type Keyword struct {
-	Func       func(p *parser, it *item) *ErrorList
+	Func       func(p *parser, it *item) ErrorList
 	Sym        SymRule
 	Type       KeywordType
 	ParamRange Range

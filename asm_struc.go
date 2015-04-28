@@ -51,11 +51,10 @@ func (v asmStruc) width() uint {
 	return 0
 }
 
-func STRUC(p *parser, it *item) *ErrorList {
+func STRUC(p *parser, it *item) (err ErrorList) {
 	// Top-level structures require a symbol name *before* the directive.
 	// On the other hand, nested structures can *optionally* have a
 	// symbol name *after* the directive. Yes, it's stupid.
-	var err *ErrorList
 	sym := it.sym
 	if p.struc != nil {
 		if it.sym != "" {

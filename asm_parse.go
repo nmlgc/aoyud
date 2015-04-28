@@ -99,7 +99,7 @@ func isAsmInt(input string) bool {
 }
 
 // newAsmInt parses the input as an integer constant.
-func newAsmInt(input string) (asmInt, *ErrorList) {
+func newAsmInt(input string) (asmInt, ErrorList) {
 	length := len(input)
 	base := 0
 	switch input[length-1] {
@@ -191,8 +191,7 @@ func (v asmMacro) String() string {
 }
 
 // newMacro creates a new multiline macro ending at itemNum.
-func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
-	var err *ErrorList
+func (p *parser) newMacro(itemNum int) (ret asmMacro, err ErrorList) {
 	header := p.instructions[p.macro.start]
 	args := make([]asmMacroArg, len(header.params))
 	for i := range header.params {
@@ -251,13 +250,13 @@ func (p *parser) newMacro(itemNum int) (asmMacro, *ErrorList) {
 // expandMacro expands the multiline macro m using the parameters of it and
 // calls p.eval for every line in the macro. Returns false if the expansion
 // was successful, true otherwise.
-func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
-	var errList *ErrorList
+func (p *parser) expandMacro(m asmMacro, it *item) (bool, ErrorList) {
+	var errList ErrorList
 	replaceMap := make(map[string]string)
 
-	setArg := func(name string, i int) (bool, *ErrorList) {
+	setArg := func(name string, i int) (bool, ErrorList) {
 		var text string
-		var err *ErrorList
+		var err ErrorList
 		ret := len(it.params) > i && len(it.params[i]) > 0
 		if ret {
 			if it.params[i][0] == '<' || it.params[i][0] == '%' {
@@ -279,10 +278,10 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 		for stream := NewLexStreamAt(it.pos, s); stream.peek() != eof; {
 			// Be sure to copy any whitespace in s.
 			start := stream.c
-			stream.ignore(&whitespace)
+			stream.ignore(whitespace)
 			ret += s[start:stream.c]
 
-			token := stream.nextToken(&macroDelim)
+			token := stream.nextToken(macroDelim)
 			if token == "&" {
 				andCached = true
 				token = ""
@@ -306,7 +305,7 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, *ErrorList) {
 		if arg.typ == "REST" || arg.typ == "VARARG" {
 			replaceMap[arg.name] = it.params[i:].String()
 		} else {
-			var err *ErrorList
+			var err ErrorList
 			replaceMap[arg.name] = arg.def
 			got, err = setArg(arg.name, i)
 			errList = errList.AddL(err)
@@ -349,7 +348,7 @@ type NestInfo struct {
 
 // ErrorListOpen returns an "open block" error list for block and all previous
 // nested blocks.
-func ErrorListOpen(block Nestable) *ErrorList {
+func ErrorListOpen(block Nestable) ErrorList {
 	str := block.OpenThing() + ": "
 	if block.Prev() != nil {
 		str = block.OpenThings() + ": "
@@ -390,14 +389,14 @@ func splitColon(s string) (string, string) {
 	return key, val
 }
 
-func (it *item) missingRequiredSym() *ErrorList {
+func (it *item) missingRequiredSym() ErrorList {
 	if it.sym == "" {
 		return ErrorListF(ESError, "%s needs a name", it.val)
 	}
 	return nil
 }
 
-func (it *item) checkSyntaxFor(k Keyword) *ErrorList {
+func (it *item) checkSyntaxFor(k Keyword) ErrorList {
 	if k.Sym == Mandatory {
 		if err := it.missingRequiredSym(); err != nil {
 			return err
@@ -406,8 +405,7 @@ func (it *item) checkSyntaxFor(k Keyword) *ErrorList {
 	return it.checkParamRange(k.ParamRange)
 }
 
-func PROC(p *parser, it *item) *ErrorList {
-	var err *ErrorList
+func PROC(p *parser, it *item) (err ErrorList) {
 	if p.proc.nest == 0 {
 		p.proc.name = it.sym
 		p.proc.start = it.num
@@ -418,8 +416,7 @@ func PROC(p *parser, it *item) *ErrorList {
 	return err
 }
 
-func ENDP(p *parser, it *item) *ErrorList {
-	var err *ErrorList
+func ENDP(p *parser, it *item) (err ErrorList) {
 	if p.proc.nest == 0 {
 		return ErrorListF(ESDebug,
 			"ignoring procedure without a PROC directive: %s", it.sym,
@@ -434,8 +431,7 @@ func ENDP(p *parser, it *item) *ErrorList {
 	return err
 }
 
-func MODEL(p *parser, it *item) *ErrorList {
-	var err *ErrorList
+func MODEL(p *parser, it *item) (err ErrorList) {
 	type modelVals struct {
 		model, codesize, datasize int64
 	}
@@ -499,7 +495,7 @@ func MODEL(p *parser, it *item) *ErrorList {
 	return err
 }
 
-func EQUALS(p *parser, it *item) *ErrorList {
+func EQUALS(p *parser, it *item) ErrorList {
 	ret, err := p.syms.evalInt(it.pos, it.params[0])
 	if err.Severity() < ESError {
 		return p.syms.Set(it.sym, *ret, false)
@@ -507,7 +503,7 @@ func EQUALS(p *parser, it *item) *ErrorList {
 	return err
 }
 
-func EQU(p *parser, it *item) (err *ErrorList) {
+func EQU(p *parser, it *item) (err ErrorList) {
 	var existing asmVal
 	tryNumber := true
 	if existing, err = p.syms.Lookup(it.sym); existing != nil {
@@ -529,14 +525,14 @@ func EQU(p *parser, it *item) (err *ErrorList) {
 }
 
 // text evaluates s as a text string used in a conditional directive.
-func (p *parser) text(s string) (string, *ErrorList) {
-	fail := func() (string, *ErrorList) {
+func (p *parser) text(s string) (string, ErrorList) {
+	fail := func() (string, ErrorList) {
 		return "", ErrorListF(ESError,
 			"invalid <text string> or %%text_macro: %s", s,
 		)
 	}
 	if s[0] == '<' {
-		var err *ErrorList
+		var err ErrorList
 		s = s[1:]
 		// TASM does not strip whitespace here, JWasm does.
 		if p.syntax == "MASM" {
@@ -571,24 +567,24 @@ func (p *parser) text(s string) (string, *ErrorList) {
 	return fail()
 }
 
-func (p *parser) isBlank(s string) (bool, *ErrorList) {
+func (p *parser) isBlank(s string) (bool, ErrorList) {
 	ret, err := p.text(s)
 	return len(ret) == 0, err
 }
 
-func (p *parser) isEqual(s1, s2 string) (bool, *ErrorList) {
+func (p *parser) isEqual(s1, s2 string) (bool, ErrorList) {
 	ret1, err1 := p.text(s1)
 	ret2, err2 := p.text(s2)
 	return ret1 == ret2, err1.AddL(err2)
 }
 
-func (p *parser) isEqualFold(s1, s2 string) (bool, *ErrorList) {
+func (p *parser) isEqualFold(s1, s2 string) (bool, ErrorList) {
 	ret1, err1 := p.text(s1)
 	ret2, err2 := p.text(s2)
 	return strings.EqualFold(ret1, ret2), err1.AddL(err2)
 }
 
-func (p *parser) evalIf(match bool) *ErrorList {
+func (p *parser) evalIf(match bool) ErrorList {
 	valid := match && p.ifMatch == p.ifNest
 	if valid {
 		p.ifMatch++
@@ -598,7 +594,7 @@ func (p *parser) evalIf(match bool) *ErrorList {
 	return nil
 }
 
-func (p *parser) evalElseif(directive string, match bool) *ErrorList {
+func (p *parser) evalElseif(directive string, match bool) ErrorList {
 	if p.ifNest == 0 {
 		return ErrorListF(ESWarning, "unmatched %s", directive)
 	}
@@ -612,7 +608,7 @@ func (p *parser) evalElseif(directive string, match bool) *ErrorList {
 }
 
 type ifidnMode struct {
-	compareFn func(*parser, string, string) (bool, *ErrorList)
+	compareFn func(*parser, string, string) (bool, ErrorList)
 	identical bool
 }
 
@@ -625,19 +621,19 @@ var ifidnModeMap = map[string]ifidnMode{
 	"IFDIFI": {compareFn: (*parser).isEqualFold, identical: false},
 }
 
-func IFDEF(p *parser, it *item) *ErrorList {
+func IFDEF(p *parser, it *item) ErrorList {
 	mode := it.val == "IFDEF"
 	val, err := p.syms.Lookup(it.params[0])
 	return err.AddL(p.evalIf((val != nil) == mode))
 }
 
-func IF(p *parser, it *item) *ErrorList {
+func IF(p *parser, it *item) ErrorList {
 	mode := it.val == "IF"
 	ret, err := p.syms.evalBool(it.pos, it.params[0])
 	return err.AddL(p.evalIf(ret == mode))
 }
 
-func IFB(p *parser, it *item) *ErrorList {
+func IFB(p *parser, it *item) ErrorList {
 	mode := it.val == "IFB"
 	ret, err := p.isBlank(it.params[0])
 	if err.Severity() >= ESError {
@@ -646,7 +642,7 @@ func IFB(p *parser, it *item) *ErrorList {
 	return p.evalIf(ret == mode)
 }
 
-func IFIDN(p *parser, it *item) *ErrorList {
+func IFIDN(p *parser, it *item) ErrorList {
 	mode := ifidnModeMap[it.val]
 	ret, err := mode.compareFn(p, it.params[0], it.params[1])
 	if err.Severity() >= ESError {
@@ -655,19 +651,19 @@ func IFIDN(p *parser, it *item) *ErrorList {
 	return p.evalIf(ret == mode.identical)
 }
 
-func ELSEIFDEF(p *parser, it *item) *ErrorList {
+func ELSEIFDEF(p *parser, it *item) ErrorList {
 	mode := it.val == "ELSEIFDEF"
 	val, err := p.syms.Lookup(it.params[0])
 	return err.AddL(p.evalElseif(it.val, (val != nil) == mode))
 }
 
-func ELSEIF(p *parser, it *item) *ErrorList {
+func ELSEIF(p *parser, it *item) ErrorList {
 	mode := it.val == "ELSEIF"
 	ret, err := p.syms.evalBool(it.pos, it.params[0])
 	return err.AddL(p.evalElseif(it.val, ret == mode))
 }
 
-func ELSEIFB(p *parser, it *item) *ErrorList {
+func ELSEIFB(p *parser, it *item) ErrorList {
 	mode := it.val == "ELSEIFB"
 	ret, err := p.isBlank(it.params[0])
 	if err.Severity() >= ESError {
@@ -676,7 +672,7 @@ func ELSEIFB(p *parser, it *item) *ErrorList {
 	return p.evalElseif(it.val, ret == mode)
 }
 
-func ELSEIFIDN(p *parser, it *item) *ErrorList {
+func ELSEIFIDN(p *parser, it *item) ErrorList {
 	mode := ifidnModeMap[it.val[4:]]
 	ret, err := mode.compareFn(p, it.params[0], it.params[1])
 	if err.Severity() >= ESError {
@@ -685,11 +681,11 @@ func ELSEIFIDN(p *parser, it *item) *ErrorList {
 	return p.evalElseif(it.val, ret == mode.identical)
 }
 
-func ELSE(p *parser, it *item) *ErrorList {
+func ELSE(p *parser, it *item) ErrorList {
 	return p.evalElseif("ELSE", true)
 }
 
-func ENDIF(p *parser, it *item) *ErrorList {
+func ENDIF(p *parser, it *item) ErrorList {
 	if p.ifNest == 0 {
 		return ErrorListF(ESWarning, "found ENDIF without a matching condition")
 	}
@@ -701,7 +697,7 @@ func ENDIF(p *parser, it *item) *ErrorList {
 	return nil
 }
 
-func OPTION(p *parser, it *item) *ErrorList {
+func OPTION(p *parser, it *item) ErrorList {
 	var options = map[string](map[string]func()){
 		"CASEMAP": {
 			"NONE":      func() { p.syms.CaseSensitive = true },
@@ -726,7 +722,7 @@ func OPTION(p *parser, it *item) *ErrorList {
 	return nil
 }
 
-func MACRO(p *parser, it *item) *ErrorList {
+func MACRO(p *parser, it *item) ErrorList {
 	if p.macro.nest == 0 {
 		p.macro.name = it.sym
 		p.macro.start = it.num
@@ -735,9 +731,9 @@ func MACRO(p *parser, it *item) *ErrorList {
 	return nil
 }
 
-func ENDM(p *parser, it *item) *ErrorList {
+func ENDM(p *parser, it *item) ErrorList {
 	var macro asmMacro
-	var err *ErrorList
+	var err ErrorList
 	if p.macro.nest == 1 && p.macro.name != "" {
 		macro, err = p.newMacro(it.num)
 		if err.Severity() < ESError {
@@ -750,7 +746,7 @@ func ENDM(p *parser, it *item) *ErrorList {
 }
 
 // Placeholder for any non-MACRO block terminated with ENDM
-func DummyMacro(p *parser, it *item) *ErrorList {
+func DummyMacro(p *parser, it *item) ErrorList {
 	p.macro.nest++
 	return nil
 }
@@ -773,8 +769,7 @@ const (
 	cpuX64          = 1 << 12 // eh, whatever
 )
 
-func (p *parser) setCPU(directive string) *ErrorList {
-	var err *ErrorList
+func (p *parser) setCPU(directive string) (err ErrorList) {
 	f8086 := cpu8086 | cpu8087
 	f186 := f8086 | cpu186
 	f286 := f186 | cpu286 | cpu287
@@ -823,16 +818,16 @@ func (p *parser) setCPU(directive string) *ErrorList {
 	return err
 }
 
-func CPU(p *parser, it *item) *ErrorList {
+func CPU(p *parser, it *item) ErrorList {
 	// No difference between P or . as the first character, so...
 	return p.setCPU(it.val[1:])
 }
 
-func SEGMENT(p *parser, it *item) *ErrorList {
+func SEGMENT(p *parser, it *item) ErrorList {
 	cpuWordSize := uint(p.syms.Map["@WORDSIZE"].Val.(asmInt).n) // can never fail
 	seg := &asmSegment{}
 	var old asmVal
-	var errList *ErrorList
+	var errList ErrorList
 	var attributes = map[string]func(){
 		"USE16": func() { seg.wordsize = 2 },
 		"USE32": func() { seg.wordsize = 4 },
@@ -875,9 +870,8 @@ func SEGMENT(p *parser, it *item) *ErrorList {
 	return errList.AddL(p.syms.Set(it.sym, seg, false))
 }
 
-func ENDS(p *parser, it *item) *ErrorList {
+func ENDS(p *parser, it *item) (err ErrorList) {
 	if p.seg != nil && p.syms.Equal(p.seg.name, it.sym) {
-		var err *ErrorList
 		if p.struc != nil {
 			err = ErrorListOpen(p.struc)
 			p.struc = nil
@@ -899,7 +893,7 @@ func ENDS(p *parser, it *item) *ErrorList {
 	return ErrorListF(ESError, "unmatched ENDS: %s", it.sym)
 }
 
-func DATA(p *parser, it *item) *ErrorList {
+func DATA(p *parser, it *item) ErrorList {
 	var widthMap = map[string]uint{
 		"DB": 1, "DW": 2, "DD": 4, "DF": 6, "DP": 6, "DQ": 8, "DT": 10,
 	}
@@ -910,7 +904,7 @@ func DATA(p *parser, it *item) *ErrorList {
 	return nil
 }
 
-func LABEL(p *parser, it *item) *ErrorList {
+func LABEL(p *parser, it *item) ErrorList {
 	size, err := p.syms.evalInt(it.pos, it.params[0])
 	if size != nil && p.seg != nil {
 		ptr := asmDataPtr{seg: p.seg, off: -1, w: uint(size.n)}
@@ -921,7 +915,7 @@ func LABEL(p *parser, it *item) *ErrorList {
 
 // eval evaluates the given item, updates the parse state accordingly, and
 // keeps it in the parser's instruction list if necessary.
-func (p *parser) eval(it *item) (err *ErrorList) {
+func (p *parser) eval(it *item) (err ErrorList) {
 	var typ KeywordType = 0
 	k, ok := Keywords[it.val]
 	if ok {
@@ -961,7 +955,7 @@ func (p *parser) eval(it *item) (err *ErrorList) {
 	return err
 }
 
-func Parse(filename string, syntax string, includePaths []string) (*parser, *ErrorList) {
+func Parse(filename string, syntax string, includePaths []string) (*parser, ErrorList) {
 	p := &parser{syntax: syntax, syms: *NewSymMap()}
 	p.setCPU("8086")
 

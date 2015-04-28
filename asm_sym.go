@@ -59,10 +59,10 @@ func (s *SymMap) Equal(s1 string, s2 string) bool {
 // Lookup wraps Go's own map lookup using the case sensitivity setting of s.
 // It returns the value of the symbol or nil if it doesn't exist in s,
 // together with a possible error.
-func (s *SymMap) Lookup(name string) (asmVal, *ErrorList) {
+func (s *SymMap) Lookup(name string) (asmVal, ErrorList) {
 	realName := s.ToSymCase(name)
 	if ret, ok := s.Map[realName]; ok {
-		var err *ErrorList
+		var err ErrorList
 		if !s.CaseSensitive && name != realName {
 			if _, ok := s.Map[name]; ok {
 				err = ErrorListF(ESWarning,
@@ -78,14 +78,14 @@ func (s *SymMap) Lookup(name string) (asmVal, *ErrorList) {
 
 // Get returns the value of a symbol that is meant to exist in s, or an error
 // if it doesn't.
-func (s *SymMap) Get(name string) (asmVal, *ErrorList) {
+func (s *SymMap) Get(name string) (asmVal, ErrorList) {
 	if ret, err := s.Lookup(name); ret != nil {
 		return ret, err
 	}
 	return nil, ErrorListF(ESError, "unknown symbol: %s", name)
 }
 
-func (s *SymMap) Set(name string, val asmVal, constant bool) *ErrorList {
+func (s *SymMap) Set(name string, val asmVal, constant bool) ErrorList {
 	// Maybe the asmVal interface should have received a Equal()
 	// method, but given the fact that most types are constant anyway…
 	redefinable := func(a, b asmVal) bool {
@@ -102,7 +102,7 @@ func (s *SymMap) Set(name string, val asmVal, constant bool) *ErrorList {
 
 	realName := s.ToSymCase(name)
 	if existing := s.Map[realName]; existing.Val != nil {
-		fail := func() (err *ErrorList) {
+		fail := func() (err ErrorList) {
 			err = err.AddF(ESError,
 				"symbol already defined as %s: %s",
 				existing.Val.Thing(), realName,

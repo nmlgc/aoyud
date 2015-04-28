@@ -39,15 +39,15 @@ const (
 )
 
 type shuntVal interface {
-	calc(retStack *shuntStack) (shuntVal, *ErrorList)
+	calc(retStack *shuntStack) (shuntVal, ErrorList)
 	fmt.Stringer
 }
 
-func (v asmInt) calc(retStack *shuntStack) (shuntVal, *ErrorList) {
+func (v asmInt) calc(retStack *shuntStack) (shuntVal, ErrorList) {
 	return v, nil
 }
 
-func (v asmString) calc(retStack *shuntStack) (shuntVal, *ErrorList) {
+func (v asmString) calc(retStack *shuntStack) (shuntVal, ErrorList) {
 	return v.toInt()
 }
 
@@ -68,7 +68,7 @@ func (op *shuntOp) width() uint {
 	return 0
 }
 
-func (op *shuntOp) calc(retStack *shuntStack) (shuntVal, *ErrorList) {
+func (op *shuntOp) calc(retStack *shuntStack) (shuntVal, ErrorList) {
 	var args [2]asmInt
 	for i := 0; i < op.args; i++ {
 		arg, err := retStack.pop()
@@ -99,7 +99,7 @@ func (stack *shuntStack) peek() shuntVal {
 	return nil
 }
 
-func (stack *shuntStack) pop() (shuntVal, *ErrorList) {
+func (stack *shuntStack) pop() (shuntVal, ErrorList) {
 	if ret := stack.peek(); ret != nil {
 		*stack = (*stack)[:len(*stack)-1]
 		return ret, nil
@@ -162,12 +162,12 @@ var binaryOperators = shuntOpMap{
 
 // nextShuntToken returns the next operand or operator from s. Only operators
 // in opSet are identified as such.
-func (s *SymMap) nextShuntToken(stream *lexStream, opSet *shuntOpMap) (ret asmVal, err *ErrorList) {
-	token := stream.nextToken(&shuntDelim)
+func (s *SymMap) nextShuntToken(stream *lexStream, opSet *shuntOpMap) (ret asmVal, err ErrorList) {
+	token := stream.nextToken(shuntDelim)
 	if isAsmInt(token) {
 		return newAsmInt(token)
 	} else if quote := token[0]; quotes.matches(quote) && len(token) == 1 {
-		token = stream.nextUntil(&charGroup{quote})
+		token = stream.nextUntil(charGroup{quote})
 		err = stream.nextAssert(quote, token)
 		return asmString(token), err
 	}
@@ -183,7 +183,7 @@ func (s *SymMap) nextShuntToken(stream *lexStream, opSet *shuntOpMap) (ret asmVa
 // pushOp evaluates newOp, a newly incoming operator, in relation to the
 // previous operators on top of opStack, and returns the next set of allowed
 // operators.
-func (retStack *shuntStack) pushOp(opStack *shuntStack, newOp *shuntOp) (*shuntOpMap, *ErrorList) {
+func (retStack *shuntStack) pushOp(opStack *shuntStack, newOp *shuntOp) (*shuntOpMap, ErrorList) {
 	switch newOp.id {
 	case opParenR:
 		top, err := opStack.pop()
@@ -217,7 +217,7 @@ type shuntState struct {
 	opSet    *shuntOpMap
 }
 
-func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err *ErrorList) {
+func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err ErrorList) {
 	stream := NewLexStreamAt(pos, expr)
 	for stream.peek() != eof && err.Severity() < ESError {
 		token, errToken := s.nextShuntToken(stream, state.opSet)
@@ -233,7 +233,7 @@ func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err *Er
 			state.retStack.push(token.(asmString))
 			state.opSet = &binaryOperators
 		case *shuntOp:
-			var errOp *ErrorList
+			var errOp ErrorList
 			state.opSet, errOp = state.retStack.pushOp(
 				&state.opStack, token.(*shuntOp),
 			)
@@ -247,13 +247,13 @@ func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err *Er
 				"can't use %s in arithmetic expression", token.Thing(),
 			)
 		}
-		stream.ignore(&whitespace)
+		stream.ignore(whitespace)
 	}
 	return err
 }
 
 // shunt converts the arithmetic expression in expr into an RPN stack.
-func (s *SymMap) shunt(pos ItemPos, expr string) (stack *shuntStack, err *ErrorList) {
+func (s *SymMap) shunt(pos ItemPos, expr string) (stack *shuntStack, err ErrorList) {
 	state := &shuntState{opSet: &unaryOperators}
 	if err = s.shuntLoop(state, pos, expr); err.Severity() >= ESError {
 		return nil, err
@@ -270,7 +270,7 @@ func (s *SymMap) shunt(pos ItemPos, expr string) (stack *shuntStack, err *ErrorL
 }
 
 // solve evaluates the RPN stack s and returns the result.
-func (s shuntStack) solve() (ret *asmInt, err *ErrorList) {
+func (s shuntStack) solve() (ret *asmInt, err ErrorList) {
 	retStack := make(shuntStack, 0, cap(s))
 	for _, val := range s {
 		result, errCalc := val.calc(&retStack)
@@ -287,7 +287,7 @@ func (s shuntStack) solve() (ret *asmInt, err *ErrorList) {
 }
 
 // evalInt wraps shunt and solve.
-func (s *SymMap) evalInt(pos ItemPos, expr string) (*asmInt, *ErrorList) {
+func (s *SymMap) evalInt(pos ItemPos, expr string) (*asmInt, ErrorList) {
 	rpnStack, err := s.shunt(pos, expr)
 	if err.Severity() < ESError {
 		ret, errSolve := rpnStack.solve()
@@ -297,7 +297,7 @@ func (s *SymMap) evalInt(pos ItemPos, expr string) (*asmInt, *ErrorList) {
 }
 
 // evalBool wraps evalInt and casts its result to a bool.
-func (s *SymMap) evalBool(pos ItemPos, expr string) (bool, *ErrorList) {
+func (s *SymMap) evalBool(pos ItemPos, expr string) (bool, ErrorList) {
 	ret, err := s.evalInt(pos, expr)
 	if err.Severity() < ESError {
 		return ret.n != 0, err

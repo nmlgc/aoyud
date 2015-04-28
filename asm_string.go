@@ -24,7 +24,7 @@ func (v asmString) String() string {
 	return strconv.Quote(string(v))
 }
 
-func (v asmString) toInt() (asmInt, *ErrorList) {
+func (v asmString) toInt() (asmInt, ErrorList) {
 	ret := asmInt{base: 256}
 	if len(v) > maxbytes {
 		return ret, ErrorListF(ESError,

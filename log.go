@@ -14,11 +14,8 @@ type printlnFn func(*log.Logger, ...interface{})
 var codeLogger = log.New(os.Stderr, "", 0)
 
 // Print pretty-prints the given error list.
-func (e *ErrorList) Print() {
-	if e == nil {
-		return
-	}
-	for _, err := range *e {
+func (e ErrorList) Print() {
+	for _, err := range e {
 		fn := codeLogger.Println
 		if err.sev == ESFatal {
 			fn = codeLogger.Fatalln

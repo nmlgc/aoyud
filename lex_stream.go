@@ -30,8 +30,8 @@ var nestLevelLeave = map[byte]int{
 	'\'': 8,
 }
 
-func (g *charGroup) matches(b byte) bool {
-	for _, v := range *g {
+func (g charGroup) matches(b byte) bool {
+	for _, v := range g {
 		if v == b {
 			return true
 		}
@@ -51,7 +51,7 @@ const eof = 0
 
 // ignore consumes bytes from the input until they stop matching the given
 // character group.
-func (s *lexStream) ignore(delim *charGroup) {
+func (s *lexStream) ignore(delim charGroup) {
 	for delim.matches(s.peek()) {
 		s.next()
 	}
@@ -78,7 +78,7 @@ func (s *lexStream) next() byte {
 
 // nextAssert consumes the next byte in the input and returns a warning if it
 // is not equal to b.
-func (s *lexStream) nextAssert(b byte, prev string) *ErrorList {
+func (s *lexStream) nextAssert(b byte, prev string) ErrorList {
 	if ret := s.next() == b; !ret {
 		return ErrorListF(ESWarning, "missing a closing %c: %s", b, prev)
 	}
@@ -87,17 +87,17 @@ func (s *lexStream) nextAssert(b byte, prev string) *ErrorList {
 
 // peekUntil returns but does not consume the next word that is delimited by
 // the given character group.
-func (s *lexStream) peekUntil(delim *charGroup) string {
+func (s *lexStream) peekUntil(delim charGroup) string {
 	tmp := *s
 	return tmp.nextUntil(delim)
 }
 
 // nextUntil consumes the next word that is delimited by the given character group.
-func (s *lexStream) nextUntil(delim *charGroup) string {
+func (s *lexStream) nextUntil(delim charGroup) string {
 	if s.peek() == eof {
 		return ""
 	}
-	s.ignore(&whitespace)
+	s.ignore(whitespace)
 	start := s.c
 	for !delim.matches(s.peek()) && s.peek() != eof {
 		s.next()
@@ -107,7 +107,7 @@ func (s *lexStream) nextUntil(delim *charGroup) string {
 
 // nextToken works like nextUntil, but consumes one additional character if
 // the returned string would have been empty.
-func (s *lexStream) nextToken(delim *charGroup) string {
+func (s *lexStream) nextToken(delim charGroup) string {
 	ret := s.nextUntil(delim)
 	if len(ret) == 0 {
 		ret = string(s.next())
@@ -117,12 +117,11 @@ func (s *lexStream) nextToken(delim *charGroup) string {
 
 // nextSegmentParam returns the next token delimited by either whitespace
 // or quotes.
-func (s *lexStream) nextSegmentParam() (string, *ErrorList) {
-	var err *ErrorList
-	ret := s.nextUntil(&segmentDelim)
+func (s *lexStream) nextSegmentParam() (ret string, err ErrorList) {
+	ret = s.nextUntil(segmentDelim)
 	if next := s.peek(); len(ret) == 0 && quotes.matches(next) {
 		nextStr := string(s.next())
-		ret = nextStr + s.nextUntil(&charGroup{next})
+		ret = nextStr + s.nextUntil(charGroup{next})
 		err = s.nextAssert(next, ret)
 		ret += nextStr
 	}
@@ -135,14 +134,14 @@ func (s *lexStream) nextParam() string {
 	var quote byte
 	level := 0
 
-	s.ignore(&whitespace)
+	s.ignore(whitespace)
 	start := s.c
 	for !(level == 0 && paramDelim.matches(s.peek())) && s.peek() != eof {
 		b := s.next()
 
 		if level == 0 && b == '\\' {
-			s.nextUntil(&linebreak)
-			s.ignore(&linebreak)
+			s.nextUntil(linebreak)
+			s.ignore(linebreak)
 		}
 		var leavecond bool
 		ll := nestLevelLeave[b]
