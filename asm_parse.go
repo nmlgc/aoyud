@@ -248,7 +248,7 @@ func (p *parser) newMacro(itemNum int) (ret asmMacro, err ErrorList) {
 }
 
 // expandMacro expands the multiline macro m using the parameters of it and
-// calls p.eval for every line in the macro. Returns false if the expansion
+// calls p.evalNew for every line in the macro. Returns false if the expansion
 // was successful, true otherwise.
 func (p *parser) expandMacro(m asmMacro, it *item) (bool, ErrorList) {
 	var errList ErrorList
@@ -333,7 +333,7 @@ func (p *parser) expandMacro(m asmMacro, it *item) (bool, ErrorList) {
 		errList = errList.AddL(err)
 		if err.Severity() < ESError {
 			expanded.num = len(p.instructions)
-			errList = errList.AddLAt(expanded.pos, p.eval(expanded))
+			errList = errList.AddLAt(expanded.pos, p.evalNew(expanded))
 		}
 	}
 	return false, errList
@@ -917,8 +917,8 @@ func LABEL(p *parser, it *item) ErrorList {
 }
 
 // eval evaluates the given item, updates the parse state accordingly, and
-// keeps it in the parser's instruction list if necessary.
-func (p *parser) eval(it *item) (err ErrorList) {
+// returns whether to keep it in the parser's instruction list.
+func (p *parser) eval(it *item) (keep bool, err ErrorList) {
 	var typ KeywordType = 0
 	k, ok := Keywords[it.val]
 	if ok {
@@ -927,7 +927,7 @@ func (p *parser) eval(it *item) (err ErrorList) {
 	if !(typ&Conditional != 0 || (p.ifMatch >= p.ifNest)) {
 		return
 	}
-	ret := true
+	keep = true
 	if typ&Macro != 0 || p.macro.nest == 0 {
 		if ok {
 			if typ&Emit != 0 && p.seg == nil && p.struc == nil {
@@ -941,18 +941,23 @@ func (p *parser) eval(it *item) (err ErrorList) {
 			} else if k.Func != nil {
 				if err = it.checkSyntaxFor(k); err.Severity() < ESError {
 					err = k.Func(p, it)
-					ret = typ&Evaluated == 0
+					keep = typ&Evaluated == 0
 				}
 			}
 		} else // Dropping the error on unknown directives/symbols for now
 		if insSym, errSym := p.syms.Get(it.val); errSym == nil {
 			switch insSym.(type) {
 			case asmMacro:
-				ret, err = p.expandMacro(insSym.(asmMacro), it)
+				keep, err = p.expandMacro(insSym.(asmMacro), it)
 			}
 		}
 	}
-	if ret {
+	return keep, err
+}
+
+func (p *parser) evalNew(it *item) (err ErrorList) {
+	keep, err := p.eval(it)
+	if keep {
 		p.instructions = append(p.instructions, *it)
 	}
 	return err
@@ -963,16 +968,31 @@ func Parse(filename string, syntax string, includePaths []string) (*parser, Erro
 	p.setCPU("8086")
 
 	err := p.StepIntoFile(filename, includePaths)
+	if err.Severity() >= ESFatal {
+		return p, err
+	}
 
+	// Pass 1; any non-fatal errors are ignored
 	for p.file != nil && err.Severity() < ESFatal {
-		it, lexErr := p.lexItem(&p.file.stream)
-		err = err.AddL(lexErr)
-		if it != nil && lexErr.Severity() < ESFatal {
+		it, errLex := p.lexItem(&p.file.stream)
+		if errLex.Severity() >= ESFatal {
+			return p, errLex
+		} else if it != nil {
 			it.num = len(p.instructions)
-			evalErr := p.eval(it)
-			err = err.AddLAt(it.pos, evalErr)
+			if errEval := p.evalNew(it); errEval.Severity() >= ESFatal {
+				return p, err.AddLAt(it.pos, errEval)
+			}
 		} else {
 			p.file = p.file.prev
+		}
+	}
+
+	// Pass 2
+	for i := range p.instructions {
+		_, errEval := p.eval(&p.instructions[i])
+		err = err.AddLAt(p.instructions[i].pos, errEval)
+		if errEval.Severity() >= ESFatal {
+			return p, err
 		}
 	}
 
