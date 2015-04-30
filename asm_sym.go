@@ -24,7 +24,7 @@ func (s Symbol) String() string {
 
 type SymMap struct {
 	Map           map[string]Symbol
-	CaseSensitive bool
+	CaseSensitive *bool
 }
 
 func (s SymMap) String() (ret string) {
@@ -41,7 +41,7 @@ func (s SymMap) String() (ret string) {
 }
 
 func (s *SymMap) ToSymCase(str string) string {
-	if !s.CaseSensitive {
+	if !(*s.CaseSensitive) {
 		return strings.ToUpper(str)
 	}
 	return str
@@ -50,7 +50,7 @@ func (s *SymMap) ToSymCase(str string) string {
 // Equal returns whether s1 and s2 are equal according to the case sensitivity
 // setting of s.
 func (s *SymMap) Equal(s1 string, s2 string) bool {
-	if !s.CaseSensitive {
+	if !(*s.CaseSensitive) {
 		return strings.EqualFold(s1, s2)
 	}
 	return s1 == s2
@@ -63,7 +63,7 @@ func (s *SymMap) Lookup(name string) (asmVal, ErrorList) {
 	realName := s.ToSymCase(name)
 	if ret, ok := s.Map[realName]; ok {
 		var err ErrorList
-		if !s.CaseSensitive && name != realName {
+		if !(*s.CaseSensitive) && name != realName {
 			if _, ok := s.Map[name]; ok {
 				err = ErrorListF(ESWarning,
 					"symbol name is ambiguous due to reactivated case mapping; picking %s, not %s",
@@ -121,6 +121,8 @@ func (s *SymMap) Set(name string, val asmVal, constant bool) ErrorList {
 	return nil
 }
 
-func NewSymMap() *SymMap {
-	return &SymMap{Map: make(map[string]Symbol)}
+// NewSymMap creates a new symbol map whose case sensitivity can be controlled
+// through the given pointer.
+func NewSymMap(caseSensitive *bool) *SymMap {
+	return &SymMap{Map: make(map[string]Symbol), CaseSensitive: caseSensitive}
 }

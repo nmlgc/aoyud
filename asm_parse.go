@@ -366,6 +366,7 @@ type parser struct {
 	file            *parseFile
 	syntax          string
 	syms            SymMap
+	caseSensitive   bool
 	macroLocalCount int // Number of LOCAL directives expanded
 	// Open blocks
 	proc    NestInfo
@@ -700,9 +701,9 @@ func ENDIF(p *parser, it *item) ErrorList {
 func OPTION(p *parser, it *item) ErrorList {
 	var options = map[string](map[string]func()){
 		"CASEMAP": {
-			"NONE":      func() { p.syms.CaseSensitive = true },
-			"NOTPUBLIC": func() { p.syms.CaseSensitive = false },
-			"ALL":       func() { p.syms.CaseSensitive = false },
+			"NONE":      func() { p.caseSensitive = true },
+			"NOTPUBLIC": func() { p.caseSensitive = false },
+			"ALL":       func() { p.caseSensitive = false },
 		},
 	}
 	for _, param := range it.params {
@@ -964,7 +965,9 @@ func (p *parser) evalNew(it *item) (err ErrorList) {
 }
 
 func Parse(filename string, syntax string, includePaths []string) (*parser, ErrorList) {
-	p := &parser{syntax: syntax, syms: *NewSymMap()}
+	p := &parser{syntax: syntax}
+	syms := *NewSymMap(&p.caseSensitive)
+	p.syms = syms
 	p.setCPU("8086")
 
 	err := p.StepIntoFile(filename, includePaths)
