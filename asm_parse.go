@@ -887,9 +887,8 @@ func ENDS(p *parser, it *item) (err ErrorList) {
 			expSym = p.struc.name
 		}
 		if p.syms.Equal(it.sym, expSym) {
-			if it.sym != "" {
-				err = p.syms.Set(it.sym, *p.struc, p.syntax != "TASM")
-			}
+			// Will do nothing for nested structures.
+			err = p.syms.Set(it.sym, *p.struc, p.syntax != "TASM")
 			p.struc = p.struc.prev
 			return err
 		}

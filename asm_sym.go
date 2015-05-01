@@ -85,7 +85,13 @@ func (s *SymMap) Get(name string) (asmVal, ErrorList) {
 	return nil, ErrorListF(ESError, "unknown symbol: %s", name)
 }
 
+// Set tries to add a new symbol with the given name and value to s, while
+// taking the constness of a possible existing value with the same name into
+// account. If name is empty, the function does nothing.
 func (s *SymMap) Set(name string, val asmVal, constant bool) ErrorList {
+	if name == "" {
+		return nil
+	}
 	// Maybe the asmVal interface should have received a Equal()
 	// method, but given the fact that most types are constant anyway…
 	redefinable := func(a, b asmVal) bool {
