@@ -27,17 +27,27 @@ type SymMap struct {
 	CaseSensitive *bool
 }
 
-func (s SymMap) String() (ret string) {
+// Dump returns a string listing all symbols in s in alphabetical order,
+// together with their values, indented with the given number of tabs.
+func (s SymMap) Dump(indent int) (ret string) {
+	if len(s.Map) == 0 {
+		return ""
+	}
 	var keys []string
 	for i := range s.Map {
 		keys = append(keys, i)
 	}
 	sort.Strings(keys)
-	ret += "Symbols: [\n"
 	for _, k := range keys {
-		ret += fmt.Sprintf("• %s: %s", k, s.Map[k])
+		ret += fmt.Sprintf(
+			"%s• %s: %s", strings.Repeat("\t", indent), k, s.Map[k],
+		)
 	}
-	return ret + "]"
+	return ret[:len(ret)-1]
+}
+
+func (s SymMap) String() (ret string) {
+	return s.Dump(0)
 }
 
 func (s *SymMap) ToSymCase(str string) string {

@@ -285,5 +285,7 @@ func main() {
 	for _, i := range p.instructions {
 		fmt.Println(i)
 	}
-	ErrorListFAt(NewItemPos(filename, 0), ESDebug, "%s", p.syms).Print()
+	ErrorListFAt(NewItemPos(filename, 0), ESDebug,
+		"Symbols: [\n%s\n]", p.syms,
+	).Print()
 }
