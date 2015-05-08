@@ -84,6 +84,16 @@ func (v asmInt) String() string {
 	return ret
 }
 
+// FitsIn returns whether n can fit in the given number of bytes.
+func (v asmInt) FitsIn(bytes uint) bool {
+	// In fact, 64-bit declarations in JWasm don't limit the value at all.
+	if bytes >= 8 {
+		return true
+	}
+	return v.n >= -int64(1<<(bytes*8)) &&
+		v.n <= int64((1<<(bytes*8)-1))
+}
+
 // isAsmInt checks whether input is to be interpreted as a single integer
 // constant.
 func isAsmInt(input string) bool {

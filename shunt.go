@@ -86,22 +86,26 @@ func (op *shuntOp) String() string {
 }
 
 type shuntOpMap map[string]shuntOp
-type shuntStack []shuntVal
+
+type shuntStack struct {
+	vals     []shuntVal
+	wordsize uint
+}
 
 func (stack *shuntStack) push(element shuntVal) {
-	*stack = append(*stack, element)
+	stack.vals = append(stack.vals, element)
 }
 
 func (stack *shuntStack) peek() shuntVal {
-	if length := len(*stack); length != 0 {
-		return (*stack)[length-1]
+	if length := len(stack.vals); length != 0 {
+		return stack.vals[length-1]
 	}
 	return nil
 }
 
 func (stack *shuntStack) pop() (shuntVal, ErrorList) {
 	if ret := stack.peek(); ret != nil {
-		*stack = (*stack)[:len(*stack)-1]
+		stack.vals = stack.vals[:len(stack.vals)-1]
 		return ret, nil
 	}
 	return nil, ErrorListF(ESError, "arithmetic stack underflow")
@@ -254,7 +258,10 @@ func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err Err
 
 // shunt converts the arithmetic expression in expr into an RPN stack.
 func (s *SymMap) shunt(pos ItemPos, expr string) (stack *shuntStack, err ErrorList) {
-	state := &shuntState{opSet: &unaryOperators}
+	state := &shuntState{
+		opSet:    &unaryOperators,
+		retStack: shuntStack{wordsize: maxbytes},
+	}
 	if err = s.shuntLoop(state, pos, expr); err.Severity() >= ESError {
 		return nil, err
 	}
@@ -271,18 +278,26 @@ func (s *SymMap) shunt(pos ItemPos, expr string) (stack *shuntStack, err ErrorLi
 
 // solve evaluates the RPN stack s and returns the result.
 func (s shuntStack) solve() (ret *asmInt, err ErrorList) {
-	retStack := make(shuntStack, 0, cap(s))
-	for _, val := range s {
+	retStack := shuntStack{
+		vals:     make([]shuntVal, 0, cap(s.vals)),
+		wordsize: s.wordsize,
+	}
+	for _, val := range s.vals {
 		result, errCalc := val.calc(&retStack)
 		if errCalc.Severity() < ESError {
 			retStack.push(result)
 		}
 		err = err.AddL(errCalc)
 	}
-	if len(retStack) != 1 {
+	if len(retStack.vals) != 1 {
 		return nil, err.AddF(ESError, "invalid RPN expression: %s", s)
 	}
-	result := retStack[0].(asmInt)
+	result := retStack.vals[0].(asmInt)
+	if !result.FitsIn(s.wordsize) {
+		err = err.AddF(ESError,
+			"number exceeds %d bits: %s", s.wordsize*8, result,
+		)
+	}
 	return &result, err
 }
 
