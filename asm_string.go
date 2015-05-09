@@ -20,6 +20,10 @@ func (v asmString) width() uint {
 	return uint(len(v))
 }
 
+func (v asmString) Calc(retStack *shuntStack) (asmInt, ErrorList) {
+	return v.toInt()
+}
+
 func (v asmString) String() string {
 	return strconv.Quote(string(v))
 }

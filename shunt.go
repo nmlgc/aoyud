@@ -39,16 +39,14 @@ const (
 )
 
 type shuntVal interface {
-	calc(retStack *shuntStack) (shuntVal, ErrorList)
+	// Calc returns the integer constant resulting from evaluating the
+	// type's value on top of retStack, or an error on failure.
+	Calc(retStack *shuntStack) (asmInt, ErrorList)
 	fmt.Stringer
 }
 
-func (v asmInt) calc(retStack *shuntStack) (shuntVal, ErrorList) {
+func (v asmInt) Calc(retStack *shuntStack) (asmInt, ErrorList) {
 	return v, nil
-}
-
-func (v asmString) calc(retStack *shuntStack) (shuntVal, ErrorList) {
-	return v.toInt()
 }
 
 type shuntOp struct {
@@ -68,12 +66,12 @@ func (op *shuntOp) width() uint {
 	return 0
 }
 
-func (op *shuntOp) calc(retStack *shuntStack) (shuntVal, ErrorList) {
+func (op *shuntOp) Calc(retStack *shuntStack) (asmInt, ErrorList) {
 	var args [2]asmInt
 	for i := 0; i < op.args; i++ {
 		arg, err := retStack.pop()
 		if err != nil {
-			return arg, err
+			return args[0], err
 		}
 		args[1-i] = arg.(asmInt)
 	}
@@ -283,7 +281,7 @@ func (s shuntStack) solve() (ret *asmInt, err ErrorList) {
 		wordsize: s.wordsize,
 	}
 	for _, val := range s.vals {
-		result, errCalc := val.calc(&retStack)
+		result, errCalc := val.Calc(&retStack)
 		if errCalc.Severity() < ESError {
 			retStack.push(result)
 		}
