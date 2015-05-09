@@ -3,7 +3,6 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -38,11 +37,10 @@ const (
 	opPtr = "PTR"
 )
 
-type shuntVal interface {
+type Shuntable interface {
 	// Calc returns the integer constant resulting from evaluating the
 	// type's value on top of retStack, or an error on failure.
 	Calc(retStack *shuntStack) (asmInt, ErrorList)
-	fmt.Stringer
 }
 
 func (v asmInt) Calc(retStack *shuntStack) (asmInt, ErrorList) {
@@ -82,22 +80,22 @@ func (op *shuntOp) String() string {
 type shuntOpMap map[string]shuntOp
 
 type shuntStack struct {
-	vals     []shuntVal
+	vals     []Shuntable
 	wordsize uint
 }
 
-func (stack *shuntStack) push(element shuntVal) {
+func (stack *shuntStack) push(element Shuntable) {
 	stack.vals = append(stack.vals, element)
 }
 
-func (stack *shuntStack) peek() shuntVal {
+func (stack *shuntStack) peek() Shuntable {
 	if length := len(stack.vals); length != 0 {
 		return stack.vals[length-1]
 	}
 	return nil
 }
 
-func (stack *shuntStack) pop() (shuntVal, ErrorList) {
+func (stack *shuntStack) pop() (Shuntable, ErrorList) {
 	if ret := stack.peek(); ret != nil {
 		stack.vals = stack.vals[:len(stack.vals)-1]
 		return ret, nil
@@ -273,7 +271,7 @@ func (s *SymMap) shunt(pos ItemPos, expr string) (stack *shuntStack, err ErrorLi
 // solve evaluates the RPN stack s and returns the result.
 func (s shuntStack) solve() (ret *asmInt, err ErrorList) {
 	retStack := shuntStack{
-		vals:     make([]shuntVal, 0, cap(s.vals)),
+		vals:     make([]Shuntable, 0, cap(s.vals)),
 		wordsize: s.wordsize,
 	}
 	for _, val := range s.vals {
