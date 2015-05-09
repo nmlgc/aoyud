@@ -8,14 +8,17 @@ import (
 	"strings"
 )
 
-type asmVal interface {
+type Thingy interface {
 	Thing() string // Returns a singular noun describing this type of value
-	width() uint   // Returns the width in bytes of the data value
+}
+
+type asmVal interface {
+	width() uint // Returns the width in bytes of the data value
+	Thingy
 	fmt.Stringer
 }
 
 type Nestable interface {
-	asmVal
 	// Returns "open <type of block>".
 	OpenThing() string
 	// Returns "open <types of block>".

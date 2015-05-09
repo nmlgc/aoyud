@@ -62,10 +62,6 @@ func (op *shuntOp) Thing() string {
 	return "arithmetic operator"
 }
 
-func (op *shuntOp) width() uint {
-	return 0
-}
-
 func (op *shuntOp) Calc(retStack *shuntStack) (asmInt, ErrorList) {
 	var args [2]asmInt
 	for i := 0; i < op.args; i++ {
@@ -164,7 +160,7 @@ var binaryOperators = shuntOpMap{
 
 // nextShuntToken returns the next operand or operator from s. Only operators
 // in opSet are identified as such.
-func (s *SymMap) nextShuntToken(stream *lexStream, opSet *shuntOpMap) (ret asmVal, err ErrorList) {
+func (s *SymMap) nextShuntToken(stream *lexStream, opSet *shuntOpMap) (ret Thingy, err ErrorList) {
 	token := stream.nextToken(shuntDelim)
 	if isAsmInt(token) {
 		return newAsmInt(token)
