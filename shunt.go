@@ -269,7 +269,7 @@ func (s *SymMap) shunt(pos ItemPos, expr string) (stack *shuntStack, err ErrorLi
 }
 
 // solve evaluates the RPN stack s and returns the result.
-func (s shuntStack) solve() (ret *asmInt, err ErrorList) {
+func (s shuntStack) solve() (ret Shuntable, err ErrorList) {
 	retStack := shuntStack{
 		vals:     make([]Shuntable, 0, cap(s.vals)),
 		wordsize: s.wordsize,
@@ -282,22 +282,43 @@ func (s shuntStack) solve() (ret *asmInt, err ErrorList) {
 		err = err.AddL(errCalc)
 	}
 	if len(retStack.vals) != 1 {
-		return nil, err.AddF(ESError, "invalid RPN expression: %s", s)
+		// This is a rather "internal" error and should be preceded by
+		// a more specific one, so we only print it if it isn't.
+		if len(err) == 0 {
+			err = err.AddF(ESError, "invalid RPN expression: %s", s)
+		}
+		return nil, err
 	}
-	result := retStack.vals[0].(asmInt)
-	if !result.FitsIn(s.wordsize) {
-		err = err.AddF(ESError,
-			"number exceeds %d bits: %s", s.wordsize*8, result,
-		)
-	}
-	return &result, err
+	return retStack.vals[0], err
 }
 
-// evalInt wraps shunt and solve.
+// enforceIntResult converts result to an integer in the stack's word size and
+// returns an error if this is not possible.
+func (s shuntStack) enforceIntResult(result Shuntable) (*asmInt, ErrorList) {
+	ret, err := result.Calc(&s)
+	if err.Severity() < ESError && !ret.FitsIn(s.wordsize) {
+		err = err.AddF(ESError,
+			"number exceeds %d bits: %s", s.wordsize*8, ret,
+		)
+	}
+	return &ret, err
+}
+
+// solveInt wraps solve and enforceIntResult.
+func (s shuntStack) solveInt() (ret *asmInt, err ErrorList) {
+	result, err := s.solve()
+	if err.Severity() < ESError {
+		ret, errInt := s.enforceIntResult(result)
+		return ret, err.AddL(errInt)
+	}
+	return nil, err
+}
+
+// evalInt wraps shunt and solveInt.
 func (s *SymMap) evalInt(pos ItemPos, expr string) (*asmInt, ErrorList) {
 	rpnStack, err := s.shunt(pos, expr)
 	if err.Severity() < ESError {
-		ret, errSolve := rpnStack.solve()
+		ret, errSolve := rpnStack.solveInt()
 		return ret, err.AddL(errSolve)
 	}
 	return nil, err
