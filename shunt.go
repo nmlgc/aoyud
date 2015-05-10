@@ -38,12 +38,12 @@ const (
 )
 
 type Shuntable interface {
-	// Calc returns the integer constant resulting from evaluating the
-	// type's value on top of retStack, or an error on failure.
-	Calc(retStack *shuntStack) (asmInt, ErrorList)
+	// Int returns an integer representation of the type's value, or an
+	// error on failure.
+	Int() (asmInt, ErrorList)
 }
 
-func (v asmInt) Calc(retStack *shuntStack) (asmInt, ErrorList) {
+func (v asmInt) Int() (asmInt, ErrorList) {
 	return v, nil
 }
 
@@ -60,17 +60,31 @@ func (op *shuntOp) Thing() string {
 	return "arithmetic operator"
 }
 
-func (op *shuntOp) Calc(retStack *shuntStack) (asmInt, ErrorList) {
+func (op *shuntOp) Int() (asmInt, ErrorList) {
+	// TODO: Find a way to get rid of this ugly function.
+	return asmInt{}, ErrorListF(ESError,
+		"converting an arithmetic operator to an integer should never happen",
+	)
+}
+
+// Calc applies the calculation function of the operator to the top of the
+// given stack, and returns the integer result.
+func (op *shuntOp) Calc(stack *shuntStack) (ret asmInt, err ErrorList) {
 	var args [2]asmInt
 	for i := 0; i < op.args; i++ {
-		arg, err := retStack.pop()
-		if err != nil {
-			return args[0], err
+		var errInt ErrorList
+		arg, errPop := stack.pop()
+		err = err.AddL(errPop)
+		if arg != nil {
+			args[1-i], errInt = arg.Int()
 		}
-		args[1-i] = arg.(asmInt)
+		err = err.AddL(errInt)
+		if err.Severity() >= ESError {
+			return args[1-i], err
+		}
 	}
 	op.function(&args[0], &args[1])
-	return args[0], nil
+	return args[0], err
 }
 
 func (op *shuntOp) String() string {
@@ -275,11 +289,16 @@ func (s shuntStack) solve() (ret Shuntable, err ErrorList) {
 		wordsize: s.wordsize,
 	}
 	for _, val := range s.vals {
-		result, errCalc := val.Calc(&retStack)
-		if errCalc.Severity() < ESError {
-			retStack.push(result)
+		switch val.(type) {
+		case *shuntOp:
+			result, errCalc := val.(*shuntOp).Calc(&retStack)
+			if errCalc.Severity() < ESError {
+				retStack.push(result)
+			}
+			err = err.AddL(errCalc)
+		default:
+			retStack.push(val)
 		}
-		err = err.AddL(errCalc)
 	}
 	if len(retStack.vals) != 1 {
 		// This is a rather "internal" error and should be preceded by
@@ -295,7 +314,7 @@ func (s shuntStack) solve() (ret Shuntable, err ErrorList) {
 // enforceIntResult converts result to an integer in the stack's word size and
 // returns an error if this is not possible.
 func (s shuntStack) enforceIntResult(result Shuntable) (*asmInt, ErrorList) {
-	ret, err := result.Calc(&s)
+	ret, err := result.Int()
 	if err.Severity() < ESError && !ret.FitsIn(s.wordsize) {
 		err = err.AddF(ESError,
 			"number exceeds %d bits: %s", s.wordsize*8, ret,
