@@ -126,6 +126,7 @@ func b2i(b bool) int64 {
 }
 
 var asmTypes = map[string]asmInt{
+	"?":     {n: 0},
 	"BYTE":  {n: 1},
 	"WORD":  {n: 2},
 	"DWORD": {n: 4},
