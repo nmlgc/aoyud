@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 type Thingy interface {
@@ -125,7 +126,7 @@ func isAsmInt(input string) bool {
 func newAsmInt(input string) (asmInt, ErrorList) {
 	length := len(input)
 	base := 0
-	switch input[length-1] {
+	switch unicode.ToLower(rune(input[length-1])) {
 	case 'b':
 		base = 2
 	case 'o':
