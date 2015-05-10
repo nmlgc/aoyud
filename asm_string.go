@@ -37,6 +37,10 @@ func (v asmString) Int() (asmInt, ErrorList) {
 	return ret, nil
 }
 
+func (v asmString) Data(width uint) []byte {
+	return []byte(v)
+}
+
 func (v asmInt) formatASCII() string {
 	ret := make([]byte, maxbytes)
 	rest := v.n

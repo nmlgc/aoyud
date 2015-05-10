@@ -41,6 +41,8 @@ type Shuntable interface {
 	// Int returns an integer representation of the type's value, or an
 	// error on failure.
 	Int() (asmInt, ErrorList)
+	// Data converts the type's value into a byte slice of the given width.
+	Data(width uint) []byte
 }
 
 func (v asmInt) Int() (asmInt, ErrorList) {
@@ -60,11 +62,14 @@ func (op *shuntOp) Thing() string {
 	return "arithmetic operator"
 }
 
+// TODO: Find a way to get rid of these ugly functions.
 func (op *shuntOp) Int() (asmInt, ErrorList) {
-	// TODO: Find a way to get rid of this ugly function.
 	return asmInt{}, ErrorListF(ESError,
 		"converting an arithmetic operator to an integer should never happen",
 	)
+}
+func (op *shuntOp) Data(width uint) []byte {
+	return nil
 }
 
 // Calc applies the calculation function of the operator to the top of the
@@ -263,11 +268,12 @@ func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err Err
 	return err
 }
 
-// shunt converts the arithmetic expression in expr into an RPN stack.
-func (s *SymMap) shunt(pos ItemPos, expr string) (stack *shuntStack, err ErrorList) {
+// shunt converts the arithmetic expression in expr into an RPN stack with the
+// given word size.
+func (s *SymMap) shunt(pos ItemPos, expr string, wordsize uint) (stack *shuntStack, err ErrorList) {
 	state := &shuntState{
 		opSet:    &unaryOperators,
-		retStack: shuntStack{wordsize: maxbytes},
+		retStack: shuntStack{wordsize: wordsize},
 	}
 	if err = s.shuntLoop(state, pos, expr); err.Severity() >= ESError {
 		return nil, err
@@ -334,9 +340,33 @@ func (s shuntStack) solveInt() (ret *asmInt, err ErrorList) {
 	return nil, err
 }
 
+// solveData evaluates the RPN stack s and returns the result as a blob of
+// data.
+func (s shuntStack) solveData() (ret []byte, err ErrorList) {
+	result, err := s.solve()
+	if err.Severity() < ESError {
+		treatAsInt := true
+		if s.wordsize == 1 {
+			switch result.(type) {
+			case asmString:
+				treatAsInt = false
+			}
+		}
+		if treatAsInt {
+			var errEnforce ErrorList
+			result, errEnforce = s.enforceIntResult(result)
+			err = err.AddL(errEnforce)
+		}
+		if result != nil {
+			ret = result.Data(s.wordsize)
+		}
+	}
+	return ret, err
+}
+
 // evalInt wraps shunt and solveInt.
 func (s *SymMap) evalInt(pos ItemPos, expr string) (*asmInt, ErrorList) {
-	rpnStack, err := s.shunt(pos, expr)
+	rpnStack, err := s.shunt(pos, expr, maxbytes)
 	if err.Severity() < ESError {
 		ret, errSolve := rpnStack.solveInt()
 		return ret, err.AddL(errSolve)
@@ -352,4 +382,14 @@ func (s *SymMap) evalBool(pos ItemPos, expr string) (bool, ErrorList) {
 	}
 	// Default to false in the case of an error... for now, at least.
 	return false, err
+}
+
+// evalData wraps shunt and solveData.
+func (s *SymMap) evalData(pos ItemPos, expr string, wordsize uint) ([]byte, ErrorList) {
+	rpnStack, err := s.shunt(pos, expr, wordsize)
+	if err.Severity() < ESError {
+		ret, errSolve := rpnStack.solveData()
+		return ret, err.AddL(errSolve)
+	}
+	return nil, err
 }

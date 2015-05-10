@@ -87,6 +87,16 @@ func (v asmInt) String() string {
 	return ret
 }
 
+func (v asmInt) Data(width uint) []byte {
+	ret := make([]byte, width)
+	rest := v.n
+	for i := uint(0); i < width; i++ {
+		ret[width-1-i] = byte(rest & 0xFF)
+		rest >>= 8
+	}
+	return ret
+}
+
 // FitsIn returns whether n can fit in the given number of bytes.
 func (v asmInt) FitsIn(bytes uint) bool {
 	// In fact, 64-bit declarations in JWasm don't limit the value at all.
@@ -376,6 +386,7 @@ func ErrorListOpen(block Nestable) ErrorList {
 type parser struct {
 	instructions []item
 	// General state
+	pass2           bool
 	file            *parseFile
 	syntax          string
 	syms            SymMap
@@ -909,15 +920,25 @@ func ENDS(p *parser, it *item) (err ErrorList) {
 	return ErrorListF(ESError, "unmatched ENDS: %s", it.sym)
 }
 
-func DATA(p *parser, it *item) ErrorList {
-	var widthMap = map[string]uint{
+func DATA(p *parser, it *item) (err ErrorList) {
+	wordsize := map[string]uint{
 		"DB": 1, "DW": 2, "DD": 4, "DF": 6, "DP": 6, "DQ": 8, "DT": 10,
+	}[it.val]
+	if p.seg == nil {
+		return nil
 	}
-	if it.sym != "" && p.seg != nil {
-		ptr := asmDataPtr{seg: p.seg, off: -1, w: widthMap[it.val]}
-		return p.syms.Set(it.sym, ptr, true)
+	if it.sym != "" {
+		ptr := asmDataPtr{seg: p.seg, off: -1, w: wordsize}
+		err = p.syms.Set(it.sym, ptr, true)
 	}
-	return nil
+	if p.pass2 {
+		for _, param := range it.params {
+			blob, errData := p.syms.evalData(it.pos, param, wordsize)
+			err = err.AddL(errData)
+			p.seg.Append(blob)
+		}
+	}
+	return err
 }
 
 func LABEL(p *parser, it *item) ErrorList {
@@ -988,6 +1009,7 @@ func Parse(filename string, syntax string, includePaths []string) (*parser, Erro
 	}
 
 	// Pass 1; any non-fatal errors are ignored
+	p.pass2 = false
 	for p.file != nil && err.Severity() < ESFatal {
 		it, errLex := p.lexItem(&p.file.stream)
 		if errLex.Severity() >= ESFatal {
@@ -1003,6 +1025,7 @@ func Parse(filename string, syntax string, includePaths []string) (*parser, Erro
 	}
 
 	// Pass 2
+	p.pass2 = true
 	for i := range p.instructions {
 		_, errEval := p.eval(&p.instructions[i])
 		err = err.AddLAt(p.instructions[i].pos, errEval)

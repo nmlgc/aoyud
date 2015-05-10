@@ -65,8 +65,8 @@ func (s asmSegment) Prev() Nestable {
 
 func (s asmSegment) String() string {
 	return fmt.Sprintf(
-		"SEGMENT (%d-bit, %d bytes of data)",
-		s.wordsize*8, s.width(),
+		"SEGMENT (%d-bit, %d bytes of data in %d chunks)",
+		s.wordsize*8, s.width(), len(s.chunks),
 	)
 }
 
@@ -76,4 +76,12 @@ func (s asmSegment) width() uint {
 		ret += len(c)
 	}
 	return uint(ret)
+}
+
+func (s *asmSegment) Append(blob []byte) {
+	if len(s.chunks) == 0 {
+		s.chunks = make([]asmDataChunk, 1)
+	}
+	chunk := len(s.chunks) - 1
+	s.chunks[chunk] = append(s.chunks[chunk], blob...)
 }
