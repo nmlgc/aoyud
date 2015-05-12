@@ -129,7 +129,7 @@ func newAsmInt(input string) (asmInt, ErrorList) {
 	switch unicode.ToLower(rune(input[length-1])) {
 	case 'b':
 		base = 2
-	case 'o':
+	case 'o', 'q':
 		base = 8
 	case 't': // MASM only
 		base = 10
