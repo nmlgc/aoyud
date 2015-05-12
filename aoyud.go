@@ -126,6 +126,7 @@ func INCLUDE(p *parser, it *item) ErrorList {
 func (p *parser) lexItem(stream *lexStream) (ret *item, err ErrorList) {
 	var secondRule SymRule
 	var pos ItemPos
+	context := KeywordType(0)
 
 	first := stream.nextUntil(insDelim)
 	pos = append(pos, stream.pos...)
@@ -142,14 +143,15 @@ func (p *parser) lexItem(stream *lexStream) (ret *item, err ErrorList) {
 	case '=':
 		stream.next()
 		ret := &item{pos: pos, typ: itemInstruction, sym: first, val: "="}
-		return p.lexParam(stream, ret, err)
+		return p.lexParam(stream, context, ret, err)
 	}
 
 	second := stream.peekUntil(insDelim)
 	firstUpper := strings.ToUpper(first)
 	secondUpper := strings.ToUpper(second)
-	if _, ok := Keywords[firstUpper]; ok {
+	if k, ok := Keywords[firstUpper]; ok {
 		first = firstUpper
+		context = k.Type
 	} else if k, ok := Keywords[secondUpper]; ok {
 		second = secondUpper
 		secondRule = k.Sym
@@ -187,14 +189,14 @@ func (p *parser) lexItem(stream *lexStream) (ret *item, err ErrorList) {
 	} else if len(first) > 0 {
 		ret = &item{pos: pos, typ: itemInstruction, val: first}
 	}
-	return p.lexParam(stream, ret, err)
+	return p.lexParam(stream, context, ret, err)
 }
 
 // lexParam recursively scans the parameters following the given item from the
 // given stream and adds them to it.
-func (p *parser) lexParam(stream *lexStream, it *item, err ErrorList) (*item, ErrorList) {
+func (p *parser) lexParam(stream *lexStream, context KeywordType, it *item, err ErrorList) (*item, ErrorList) {
 	if it != nil {
-		if param := stream.nextParam(); len(param) > 0 {
+		if param := stream.nextParam(context); len(param) > 0 {
 			it.params = append(it.params, param)
 		}
 	}
@@ -207,7 +209,7 @@ func (p *parser) lexParam(stream *lexStream, it *item, err ErrorList) (*item, Er
 	case eof:
 		return it, err
 	default:
-		return p.lexParam(stream, it, err)
+		return p.lexParam(stream, context, it, err)
 	}
 	if it == nil {
 		return p.lexItem(stream)

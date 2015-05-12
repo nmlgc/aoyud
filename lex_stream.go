@@ -112,8 +112,8 @@ func (s *lexStream) nextSegmentParam() (ret string, err ErrorList) {
 }
 
 // nextParam consumes and returns the next parameter to an instruction, taking
-// nesting into account.
-func (s *lexStream) nextParam() string {
+// the nesting rules for the given into account.
+func (s *lexStream) nextParam(context KeywordType) string {
 
 	// nestChars maps the start delimiter of the various nesting levels used
 	// in MASM's syntax to their respective end delimiters.
@@ -123,6 +123,10 @@ func (s *lexStream) nextParam() string {
 		'<':  '>',
 		'"':  '"',
 		'\'': '\'',
+	}
+	// HLL directives use < and > as comparison operators.
+	if (context & HighLevel) != 0 {
+		delete(nestChars, '<')
 	}
 
 	type nestLevel struct {
