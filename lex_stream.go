@@ -8,27 +8,10 @@ var quotes = charGroup{'\'', '"'}
 var paramDelim = append(charGroup{',', ';'}, linebreak...)
 var insDelim = append(append(charGroup{':', '='}, whitespace...), paramDelim...)
 var shuntDelim = append(charGroup{
-	'+', '-', '*', '/', '|', '(', ')', '[', ']', '<', '>', ':', '&', '"', '\'',
+	'+', '-', '*', '/', '|', '(', ')', '[', ']', '<', '>', ':', '&', '"', '\'', ',',
 }, whitespace...)
 var macroDelim = append(charGroup{','}, shuntDelim...)
 var segmentDelim = append(charGroup{'\'', '"'}, whitespace...)
-
-// nestLevelEnter and nestLevelLeave map the various punctuation marks used in
-// TASM's syntax to bit flags ordered by their respective nesting priorities.
-var nestLevelEnter = map[byte]int{
-	'{':  1,
-	'(':  2,
-	'<':  4,
-	'"':  8,
-	'\'': 8,
-}
-var nestLevelLeave = map[byte]int{
-	'}':  1,
-	')':  2,
-	'>':  4,
-	'"':  8,
-	'\'': 8,
-}
 
 func (g charGroup) matches(b byte) bool {
 	for _, v := range g {
@@ -131,33 +114,46 @@ func (s *lexStream) nextSegmentParam() (ret string, err ErrorList) {
 // nextParam consumes and returns the next parameter to an instruction, taking
 // nesting into account.
 func (s *lexStream) nextParam() string {
+
+	// nestChars maps the start delimiter of the various nesting levels used
+	// in MASM's syntax to their respective end delimiters.
+	var nestChars = map[byte]byte{
+		'{':  '}',
+		'(':  ')',
+		'<':  '>',
+		'"':  '"',
+		'\'': '\'',
+	}
+
+	type nestLevel struct {
+		delim byte
+		prev  *nestLevel
+	}
+
 	var quote byte
-	level := 0
+	var nest *nestLevel
 
 	s.ignore(whitespace)
 	start := s.c
-	for !(level == 0 && paramDelim.matches(s.peek())) && s.peek() != eof {
+	for !(nest == nil && paramDelim.matches(s.peek())) && s.peek() != eof {
 		b := s.next()
 
-		if level == 0 && b == '\\' {
+		if nest == nil && b == '\\' {
 			s.nextUntil(linebreak)
 			s.ignore(linebreak)
 		}
-		var leavecond bool
-		ll := nestLevelLeave[b]
-		if quote != 0 {
-			leavecond = (b == quote)
-		} else {
-			leavecond = (level & ll) != 0
+		leavecond := false
+		if nest != nil {
+			leavecond = (b == nest.delim)
 		}
 		if leavecond {
-			level &= ^ll
+			nest = nest.prev
 			quote = 0
-		} else if le := nestLevelEnter[b]; le > level {
-			level |= le
+		} else if ll := nestChars[b]; ll != 0 && quote == 0 {
 			if b == '\'' || b == '"' {
 				quote = b
 			}
+			nest = &nestLevel{delim: ll, prev: nest}
 		}
 	}
 	for s.c > start && whitespace.matches(s.input[s.c-1]) {
