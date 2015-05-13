@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 )
 
@@ -35,6 +36,8 @@ const (
 	opParenR = ")"
 
 	opPtr = "PTR"
+
+	opDup = "DUP"
 )
 
 type Shuntable interface {
@@ -47,6 +50,19 @@ type Shuntable interface {
 
 func (v asmInt) Int() (asmInt, ErrorList) {
 	return v, nil
+}
+
+// asmDataResult represents the result of a DUP or a data concatenation.
+type asmDataResult []byte
+
+func (v asmDataResult) Int() (asmInt, ErrorList) {
+	return asmInt{}, ErrorListF(ESError,
+		"can't do calculations on data emitted by DUP",
+	)
+}
+
+func (v asmDataResult) Data(width uint) []byte {
+	return v
 }
 
 type shuntOp struct {
@@ -90,6 +106,14 @@ func (op *shuntOp) Calc(stack *shuntStack) (ret asmInt, err ErrorList) {
 	}
 	op.function(&args[0], &args[1])
 	return args[0], err
+}
+
+func DUP(wordsize uint, a, b Shuntable) (ret asmDataResult, err ErrorList) {
+	count, err := a.Int()
+	if err.Severity() < ESError {
+		ret = bytes.Repeat(b.Data(wordsize), int(count.n))
+	}
+	return ret, err
 }
 
 func (op *shuntOp) String() string {
@@ -174,6 +198,7 @@ var binaryOperators = shuntOpMap{
 	"OR":  {opOr, 2, 2, func(a, b *asmInt) { a.n |= b.n }},
 	"|":   {opOr, 2, 2, func(a, b *asmInt) { a.n |= b.n }},
 	"XOR": {opXor, 2, 2, func(a, b *asmInt) { a.n ^= b.n }},
+	"DUP": {opDup, 2, 2, nil},
 }
 
 // nextShuntToken returns the next operand or operator from s. Only operators
@@ -191,7 +216,15 @@ func (s *SymMap) nextShuntToken(stream *lexStream, opSet *shuntOpMap) (ret Thing
 	if typ, ok := asmTypes[tokenUpper]; ok {
 		return typ, err
 	} else if nextOp, ok := (*opSet)[tokenUpper]; ok {
-		return &nextOp, nil
+		if nextOp.id == opDup {
+			stream.ignore(whitespace)
+			if stream.peek() != '(' {
+				err = err.AddF(ESWarning,
+					"data argument to DUP must be enclosed in parentheses",
+				)
+			}
+		}
+		return &nextOp, err
 	}
 	return s.Get(token)
 }
@@ -290,7 +323,7 @@ func (s *SymMap) shunt(pos ItemPos, expr string, wordsize uint) (stack *shuntSta
 }
 
 // solve evaluates the RPN stack s and returns the result.
-func (s shuntStack) solve() (ret Shuntable, err ErrorList) {
+func (s shuntStack) solve(dataContext bool) (ret Shuntable, err ErrorList) {
 	retStack := shuntStack{
 		vals:     make([]Shuntable, 0, cap(s.vals)),
 		wordsize: s.wordsize,
@@ -298,7 +331,31 @@ func (s shuntStack) solve() (ret Shuntable, err ErrorList) {
 	for _, val := range s.vals {
 		switch val.(type) {
 		case *shuntOp:
-			result, errCalc := val.(*shuntOp).Calc(&retStack)
+			var result Shuntable
+			var errCalc ErrorList
+			op := val.(*shuntOp)
+			if op.function == nil {
+				if dataContext {
+					arg2, err2 := retStack.pop()
+					arg1, err1 := retStack.pop()
+					errCalc = errCalc.AddL(err2)
+					errCalc = errCalc.AddL(err1)
+					if errCalc.Severity() < ESError {
+						var errOp ErrorList
+						switch op.id {
+						case opDup:
+							result, errOp = DUP(retStack.wordsize, arg1, arg2)
+						}
+						errCalc = errCalc.AddL(errOp)
+					}
+				} else {
+					errCalc = ErrorListF(ESError,
+						"%s not allowed in arithmetic expression", op.String(),
+					)
+				}
+			} else {
+				result, errCalc = op.Calc(&retStack)
+			}
 			if errCalc.Severity() < ESError {
 				retStack.push(result)
 			}
@@ -332,7 +389,7 @@ func (s shuntStack) enforceIntResult(result Shuntable) (*asmInt, ErrorList) {
 
 // solveInt wraps solve and enforceIntResult.
 func (s shuntStack) solveInt() (ret *asmInt, err ErrorList) {
-	result, err := s.solve()
+	result, err := s.solve(false)
 	if err.Severity() < ESError {
 		ret, errInt := s.enforceIntResult(result)
 		return ret, err.AddL(errInt)
@@ -343,14 +400,16 @@ func (s shuntStack) solveInt() (ret *asmInt, err ErrorList) {
 // solveData evaluates the RPN stack s and returns the result as a blob of
 // data.
 func (s shuntStack) solveData() (ret []byte, err ErrorList) {
-	result, err := s.solve()
+	result, err := s.solve(true)
 	if err.Severity() < ESError {
 		treatAsInt := true
-		if s.wordsize == 1 {
-			switch result.(type) {
-			case asmString:
+		switch result.(type) {
+		case asmString:
+			if s.wordsize == 1 {
 				treatAsInt = false
 			}
+		case asmDataResult:
+			treatAsInt = false
 		}
 		if treatAsInt {
 			var errEnforce ErrorList
