@@ -37,7 +37,8 @@ const (
 
 	opPtr = "PTR"
 
-	opDup = "DUP"
+	opDup    = "DUP"
+	opConcat = ","
 )
 
 type Shuntable interface {
@@ -116,6 +117,11 @@ func DUP(wordsize uint, a, b Shuntable) (ret asmDataResult, err ErrorList) {
 	return ret, err
 }
 
+func CONCAT(wordsize uint, a, b Shuntable) (ret asmDataResult, err ErrorList) {
+	ret = append(ret, a.Data(wordsize)...)
+	return append(ret, b.Data(wordsize)...), nil
+}
+
 func (op *shuntOp) String() string {
 	return string(op.id)
 }
@@ -174,6 +180,7 @@ var unaryOperators = shuntOpMap{
 }
 
 var binaryOperators = shuntOpMap{
+	",": {opConcat, 15, 2, nil},
 	"(": {opParenL, 14, 0, nil},
 	")": {opParenR, 14, 0, nil},
 	"PTR": {opPtr, 11, 2, func(a, b *asmInt) {
@@ -345,6 +352,8 @@ func (s shuntStack) solve(dataContext bool) (ret Shuntable, err ErrorList) {
 						switch op.id {
 						case opDup:
 							result, errOp = DUP(retStack.wordsize, arg1, arg2)
+						case opConcat:
+							result, errOp = CONCAT(retStack.wordsize, arg1, arg2)
 						}
 						errCalc = errCalc.AddL(errOp)
 					}
