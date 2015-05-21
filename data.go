@@ -21,7 +21,7 @@ type asmDataChunk []byte
 // asmDataPtr represents a pointer to data in a specific segment.
 type asmDataPtr struct {
 	seg *asmSegment
-	off int64 // negative values = unknown position
+	off *uint64 // nil = unknown position (used during pass 1)
 	w   uint
 }
 
@@ -32,10 +32,10 @@ func (p asmDataPtr) Thing() string {
 func (p asmDataPtr) String() string {
 	var offChars int = int(p.seg.wordsize * 2)
 	var offStr string
-	if p.off < 0 {
+	if p.off == nil {
 		offStr = strings.Repeat("?", offChars)
 	} else {
-		offStr = fmt.Sprintf("%0*xh", offChars, p.off)
+		offStr = fmt.Sprintf("%0*xh", offChars, *p.off)
 	}
 	return fmt.Sprintf("(%d*) %s:", p.w, p.seg.name) + offStr
 }
