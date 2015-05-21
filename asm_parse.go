@@ -929,7 +929,7 @@ func DATA(p *parser, it *item) (err ErrorList) {
 		return nil
 	}
 	if it.sym != "" {
-		ptr := asmDataPtr{seg: p.seg, off: nil, w: wordsize}
+		ptr := asmDataPtr{seg: p.seg, off: p.seg.OffsetToEnd(p), w: wordsize}
 		err = p.syms.Set(it.sym, ptr, true)
 	}
 	if p.pass2 {
@@ -945,7 +945,7 @@ func DATA(p *parser, it *item) (err ErrorList) {
 func LABEL(p *parser, it *item) ErrorList {
 	size, err := p.syms.evalInt(it.pos, it.params[0])
 	if size != nil && p.seg != nil {
-		ptr := asmDataPtr{seg: p.seg, off: nil, w: uint(size.n)}
+		ptr := asmDataPtr{seg: p.seg, off: p.seg.OffsetToEnd(p), w: uint(size.n)}
 		return err.AddL(p.syms.Set(it.sym, ptr, true))
 	}
 	return err

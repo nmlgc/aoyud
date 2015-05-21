@@ -85,3 +85,11 @@ func (s *asmSegment) Append(blob []byte) {
 	chunk := len(s.chunks) - 1
 	s.chunks[chunk] = append(s.chunks[chunk], blob...)
 }
+
+func (s *asmSegment) OffsetToEnd(p *parser) (ret *uint64) {
+	if p.pass2 {
+		width := uint64(s.width())
+		ret = &width
+	}
+	return ret
+}
