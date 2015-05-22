@@ -936,7 +936,7 @@ func DATA(p *parser, it *item) (err ErrorList) {
 		for _, param := range it.params {
 			blob, errData := p.syms.evalData(it.pos, param, wordsize)
 			err = err.AddL(errData)
-			p.seg.Append(blob)
+			err = err.AddL(p.seg.Append(blob))
 		}
 	}
 	return err

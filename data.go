@@ -45,10 +45,11 @@ func (p asmDataPtr) width() uint {
 }
 
 type asmSegment struct {
-	name     string
-	chunks   []asmDataChunk
-	wordsize uint
-	prev     *asmSegment // in order to easily handle nested segments
+	name       string
+	overflowed bool
+	chunks     []asmDataChunk
+	wordsize   uint
+	prev       *asmSegment // in order to easily handle nested segments
 }
 
 func (s asmSegment) Thing() string      { return "segment name" }
@@ -78,12 +79,20 @@ func (s asmSegment) width() uint {
 	return uint(ret)
 }
 
-func (s *asmSegment) Append(blob []byte) {
+func (s *asmSegment) Append(blob []byte) (err ErrorList) {
+	maxSize := uint64((1 << (s.wordsize * 8)) - 1)
+	if uint64(len(blob))+uint64(s.width()) > maxSize && !s.overflowed {
+		s.overflowed = true
+		err = err.AddF(ESError,
+			"declaration overflows %d-bit segment: %s", s.wordsize*8, s.Name(),
+		)
+	}
 	if len(s.chunks) == 0 {
 		s.chunks = make([]asmDataChunk, 1)
 	}
 	chunk := len(s.chunks) - 1
 	s.chunks[chunk] = append(s.chunks[chunk], blob...)
+	return err
 }
 
 func (s *asmSegment) OffsetToEnd(p *parser) (ret *uint64) {
