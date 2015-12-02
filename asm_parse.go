@@ -965,11 +965,11 @@ func (p *parser) eval(it *item) (keep bool, err ErrorList) {
 	keep = true
 	if typ&Macro != 0 || p.macro.nest == 0 {
 		if ok {
-			if typ&Emit != 0 && p.seg == nil && p.struc == nil {
+			if typ&Data != 0 && p.seg == nil && p.struc == nil {
 				err = ErrorListF(ESError,
 					"code or data emission requires a segment: %s", it,
 				)
-			} else if p.struc != nil && typ&(CodeBlock|EmitCode) != 0 {
+			} else if p.struc != nil && typ&(NoStruct) != 0 {
 				err = ErrorListF(ESError,
 					"%s not allowed inside structure definition", it.val,
 				)

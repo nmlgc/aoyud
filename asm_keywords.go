@@ -3,15 +3,14 @@ package main
 type KeywordType int
 
 const (
-	EmitData  KeywordType = (1 << iota) // Emits data into the program image
-	EmitCode              = (1 << iota) // Emits code into the program image
-	CodeBlock             = (1 << iota) // Can't appear inside a STRUC or UNION
+	Data      KeywordType = (1 << iota) // Can't appear outside of a segment
+	NoStruct              = (1 << iota) // Can't appear inside a STRUC or UNION
 	Evaluated             = (1 << iota) // Not kept in the parser's instruction list
 	HighLevel             = (1 << iota) // Parsed as a HLL directive
 	Macro                 = (1 << iota)
 
 	Conditional = (1 << iota) | Evaluated
-	Emit        = EmitData | EmitCode
+	Code        = Data | NoStruct
 )
 
 // SymRule states whether a keyword can, must, or can't have a symbol name.
@@ -38,20 +37,20 @@ func init() {
 	}
 
 	cpu := Keyword{CPU, NotAllowed, 0, req(0)}
-	data := Keyword{DATA, Optional, EmitData, Range{1, -1}}
+	data := Keyword{DATA, Optional, Data, Range{1, -1}}
 	hll := Keyword{nil, NotAllowed, HighLevel, req(1)}
 
 	Keywords = map[string]Keyword{
 		"INCLUDE": {INCLUDE, NotAllowed, Evaluated, req(1)},
-		"PROC":    {PROC, Mandatory, CodeBlock, Range{0, -1}},
-		"ENDP":    {ENDP, Optional, CodeBlock, req(0)},
-		".MODEL":  {MODEL, NotAllowed, CodeBlock, Range{1, 6}},
+		"PROC":    {PROC, Mandatory, Code, Range{0, -1}},
+		"ENDP":    {ENDP, Optional, Code, req(0)},
+		".MODEL":  {MODEL, NotAllowed, NoStruct, Range{1, 6}},
 		// Equates
 		"=":       {EQUALS, Mandatory, 0, req(1)},
 		"EQU":     {EQU, Mandatory, 0, Range{1, -1}},
 		"TEXTEQU": {nil, Mandatory, 0, req(1)}, // TODO
 		"TYPEDEF": {nil, Mandatory, 0, req(1)}, // TODO
-		"LABEL":   {LABEL, Mandatory, 0, req(1)},
+		"LABEL":   {LABEL, Mandatory, Data, req(1)},
 		// Conditionals
 		"IFDEF":      {IFDEF, NotAllowed, Conditional, req(1)},
 		"IFNDEF":     {IFDEF, NotAllowed, Conditional, req(1)},
@@ -114,7 +113,7 @@ func init() {
 		// support those directives.
 
 		// Segments
-		"SEGMENT": {SEGMENT, Mandatory, CodeBlock, Range{0, 1}},
+		"SEGMENT": {SEGMENT, Mandatory, NoStruct, Range{0, 1}},
 		"ENDS":    {ENDS, Optional, 0, req(0)},
 		"GROUP":   {nil, Mandatory, 0, req(1)}, // TODO
 		// Data allocations
