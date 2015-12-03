@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 )
 
@@ -131,6 +132,10 @@ type shuntOpMap map[string]shuntOp
 type shuntStack struct {
 	vals     []Shuntable
 	wordsize uint
+}
+
+func (stack *shuntStack) String() string {
+	return fmt.Sprintf("%v (%d-bit)", stack.vals, stack.wordsize*8)
 }
 
 func (stack *shuntStack) push(element Shuntable) {
