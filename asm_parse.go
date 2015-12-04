@@ -115,9 +115,6 @@ func isAsmInt(input string) bool {
 		return false
 	}
 	f := input[0]
-	if (f == '+' || f == '-') && len(input) == 1 {
-		return false
-	}
 	validFirst := (f >= '0' && f <= '9')
 	return validFirst && (strings.IndexAny(input, " \t") == -1)
 }
