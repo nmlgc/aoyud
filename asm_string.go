@@ -24,11 +24,14 @@ func (v asmString) String() string {
 	return strconv.Quote(string(v))
 }
 
-func (v asmString) Int() (asmInt, ErrorList) {
+func (v asmString) Int(wordsize uint) (asmInt, ErrorList) {
 	ret := asmInt{base: 256}
-	if len(v) > maxbytes {
+	if wordsize < 1 || wordsize > maxbytes {
+		wordsize = maxbytes
+	}
+	if uint(len(v)) > wordsize {
 		return ret, ErrorListF(ESError,
-			"string constant larger than %d bytes: %s", maxbytes, v,
+			"string constant larger than %d bytes: %s", wordsize, v,
 		)
 	}
 	for i := 0; i < len(v); i++ {
@@ -37,7 +40,7 @@ func (v asmString) Int() (asmInt, ErrorList) {
 	return ret, nil
 }
 
-func (v asmString) Data(width uint) []byte {
+func (v asmString) Emit(width uint) []byte {
 	return []byte(v)
 }
 

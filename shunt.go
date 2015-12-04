@@ -9,7 +9,7 @@ import (
 )
 
 // Eh, why not, helps debugging.
-type shuntOpID string
+type OperatorID string
 
 const (
 	opPlus  = "+"
@@ -42,85 +42,15 @@ const (
 	opConcat = ","
 )
 
-type Shuntable interface {
-	// Int returns an integer representation of the type's value, or an
-	// error on failure.
-	Int() (asmInt, ErrorList)
-	// Data converts the type's value into a byte slice of the given width.
-	Data(width uint) []byte
-}
-
-func (v asmInt) Int() (asmInt, ErrorList) {
-	return v, nil
-}
-
-// asmDataResult represents the result of a DUP or a data concatenation.
-type asmDataResult []byte
-
-func (v asmDataResult) Int() (asmInt, ErrorList) {
-	return asmInt{}, ErrorListF(ESError,
-		"can't do calculations on data emitted by DUP",
-	)
-}
-
-func (v asmDataResult) Data(width uint) []byte {
-	return v
-}
-
 type shuntOp struct {
-	id         shuntOpID
+	id         OperatorID
 	precedence int
 	args       int
-	// Function to apply to the two operands.
-	// a will be pushed back onto the stack.
-	function func(a, b *asmInt)
+	function   interface{} // Function to apply to the operands.
 }
 
 func (op *shuntOp) Thing() string {
 	return "arithmetic operator"
-}
-
-// TODO: Find a way to get rid of these ugly functions.
-func (op *shuntOp) Int() (asmInt, ErrorList) {
-	return asmInt{}, ErrorListF(ESError,
-		"converting an arithmetic operator to an integer should never happen",
-	)
-}
-func (op *shuntOp) Data(width uint) []byte {
-	return nil
-}
-
-// Calc applies the calculation function of the operator to the top of the
-// given stack, and returns the integer result.
-func (op *shuntOp) Calc(stack *shuntStack) (ret asmInt, err ErrorList) {
-	var args [2]asmInt
-	for i := 0; i < op.args; i++ {
-		var errInt ErrorList
-		arg, errPop := stack.pop()
-		err = err.AddL(errPop)
-		if arg != nil {
-			args[1-i], errInt = arg.Int()
-		}
-		err = err.AddL(errInt)
-		if err.Severity() >= ESError {
-			return args[1-i], err
-		}
-	}
-	op.function(&args[0], &args[1])
-	return args[0], err
-}
-
-func DUP(wordsize uint, a, b Shuntable) (ret asmDataResult, err ErrorList) {
-	count, err := a.Int()
-	if err.Severity() < ESError {
-		ret = bytes.Repeat(b.Data(wordsize), int(count.n))
-	}
-	return ret, err
-}
-
-func CONCAT(wordsize uint, a, b Shuntable) (ret asmDataResult, err ErrorList) {
-	ret = append(ret, a.Data(wordsize)...)
-	return append(ret, b.Data(wordsize)...), nil
 }
 
 func (op *shuntOp) String() string {
@@ -130,7 +60,7 @@ func (op *shuntOp) String() string {
 type shuntOpMap map[string]shuntOp
 
 type shuntStack struct {
-	vals     []Shuntable
+	vals     []Thingy
 	wordsize uint
 }
 
@@ -138,18 +68,18 @@ func (stack *shuntStack) String() string {
 	return fmt.Sprintf("%v (%d-bit)", stack.vals, stack.wordsize*8)
 }
 
-func (stack *shuntStack) push(element Shuntable) {
+func (stack *shuntStack) push(element Thingy) {
 	stack.vals = append(stack.vals, element)
 }
 
-func (stack *shuntStack) peek() Shuntable {
+func (stack *shuntStack) peek() Thingy {
 	if length := len(stack.vals); length != 0 {
 		return stack.vals[length-1]
 	}
 	return nil
 }
 
-func (stack *shuntStack) pop() (Shuntable, ErrorList) {
+func (stack *shuntStack) pop() (Thingy, ErrorList) {
 	if ret := stack.peek(); ret != nil {
 		stack.vals = stack.vals[:len(stack.vals)-1]
 		return ret, nil
@@ -179,9 +109,9 @@ var asmTypes = map[string]asmInt{
 var unaryOperators = shuntOpMap{
 	"(":   {opParenL, 14, 0, nil},
 	")":   {opParenR, 14, 0, nil},
-	"+":   {opPlus, 8, 1, func(a, b *asmInt) { a.base = b.base }},
-	"-":   {opMinus, 8, 1, func(a, b *asmInt) { a.n = -b.n; a.base = b.base }},
-	"NOT": {opNot, 4, 1, func(a, b *asmInt) { a.n = ^b.n; a.base = b.base }},
+	"+":   {opPlus, 8, 1, func(a *asmInt) {}},
+	"-":   {opMinus, 8, 1, func(a *asmInt) { a.n = -a.n }},
+	"NOT": {opNot, 4, 1, func(a *asmInt) { a.n = ^a.n }},
 }
 
 var binaryOperators = shuntOpMap{
@@ -211,6 +141,95 @@ var binaryOperators = shuntOpMap{
 	"|":   {opOr, 2, 2, func(a, b *asmInt) { a.n |= b.n }},
 	"XOR": {opXor, 2, 2, func(a, b *asmInt) { a.n ^= b.n }},
 	"DUP": {opDup, 2, 2, nil},
+}
+
+type Emittable interface {
+	Emit(width uint) []byte
+}
+
+// Since you can only go from integers to bytes, but not back, this saves us
+// from having to needlessly implement Emit() for all Calcables.
+type CalcToEmitOperator struct {
+	Calc Calcable
+}
+
+func (cte CalcToEmitOperator) String() string {
+	return cte.Calc.String()
+}
+
+func (cte CalcToEmitOperator) Emit(width uint) []byte {
+	return cte.Calc.Calc().Emit(width)
+}
+
+type DUPOperator struct {
+	Count Calcable
+	Data  Emittable
+}
+
+func (dup DUPOperator) String() string {
+	return fmt.Sprintf("(%s DUP(%s))", dup.Count, dup.Data)
+}
+
+func (dup DUPOperator) Emit(width uint) []byte {
+	return bytes.Repeat(dup.Data.Emit(width), int(dup.Count.Calc().n))
+}
+
+type ConcatOperator struct {
+	Data [2]Emittable
+}
+
+func (cc ConcatOperator) String() string {
+	return fmt.Sprintf("(%s, %s)", cc.Data[0], cc.Data[1])
+}
+
+func (cc ConcatOperator) Emit(width uint) (ret []byte) {
+	ret = append(ret, cc.Data[0].Emit(width)...)
+	return append(ret, cc.Data[1].Emit(width)...)
+}
+
+type Calcable interface {
+	fmt.Stringer
+	Calc() asmInt
+}
+
+// No point in defining separate types for the callback functions of unary and
+// binary operators, since you can't do type assertions with them anyway, for
+// some bizarre reason…
+
+type UnaryOperator struct {
+	ID       OperatorID
+	Function func(a *asmInt)
+	Operand  Calcable
+}
+
+type BinaryOperator struct {
+	ID       OperatorID
+	Function func(a, b *asmInt)
+	Operands [2]Calcable
+}
+
+func (v asmInt) Calc() asmInt {
+	return v
+}
+
+func (op BinaryOperator) String() string {
+	return fmt.Sprintf("(%s %s %s)", op.Operands[0], op.ID, op.Operands[1])
+}
+
+func (op BinaryOperator) Calc() asmInt {
+	a, b := op.Operands[0].Calc(), op.Operands[1].Calc()
+	op.Function(&a, &b)
+	return a
+}
+
+func (op UnaryOperator) String() string {
+	return fmt.Sprintf("(%s %s)", op.ID, op.Operand)
+}
+
+func (op UnaryOperator) Calc() asmInt {
+	a := op.Operand.Calc()
+	op.Function(&a)
+	return a
 }
 
 // nextShuntToken returns the next operand or operator from s. Only operators
@@ -288,10 +307,15 @@ func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err Err
 		}
 		switch token.(type) {
 		case asmInt:
-			state.retStack.push(token.(asmInt))
+			state.retStack.push(token)
 			state.opSet = &binaryOperators
 		case asmString:
-			state.retStack.push(token.(asmString))
+			if state.retStack.wordsize > 1 {
+				var errInt ErrorList
+				token, errInt = token.(asmString).Int(state.retStack.wordsize)
+				err = err.AddL(errInt)
+			}
+			state.retStack.push(token)
 			state.opSet = &binaryOperators
 		case *shuntOp:
 			var errOp ErrorList
@@ -334,107 +358,114 @@ func (s *SymMap) shunt(pos ItemPos, expr string, wordsize uint) (stack *shuntSta
 	return &state.retStack, err
 }
 
-// solve evaluates the RPN stack s and returns the result.
-func (s shuntStack) solve(dataContext bool) (ret Shuntable, err ErrorList) {
-	retStack := shuntStack{
-		vals:     make([]Shuntable, 0, cap(s.vals)),
-		wordsize: s.wordsize,
-	}
-	for _, val := range s.vals {
-		switch val.(type) {
-		case *shuntOp:
-			var result Shuntable
-			var errCalc ErrorList
-			op := val.(*shuntOp)
-			if op.function == nil {
-				if dataContext {
-					arg2, err2 := retStack.pop()
-					arg1, err1 := retStack.pop()
-					errCalc = errCalc.AddL(err2)
-					errCalc = errCalc.AddL(err1)
-					if errCalc.Severity() < ESError {
-						var errOp ErrorList
-						switch op.id {
-						case opDup:
-							result, errOp = DUP(retStack.wordsize, arg1, arg2)
-						case opConcat:
-							result, errOp = CONCAT(retStack.wordsize, arg1, arg2)
-						}
-						errCalc = errCalc.AddL(errOp)
-					}
-				} else {
-					errCalc = ErrorListF(ESError,
-						"%s not allowed in arithmetic expression", op.String(),
-					)
-				}
-			} else {
-				result, errCalc = op.Calc(&retStack)
+func (s *shuntStack) processCalcOp(op *shuntOp) (ret Calcable, err ErrorList) {
+	if op.function != nil {
+		if op.args == 2 {
+			var err0, err1 ErrorList
+			ret := BinaryOperator{
+				ID: op.id, Function: op.function.(func(*asmInt, *asmInt)),
 			}
-			if errCalc.Severity() < ESError {
-				retStack.push(result)
+			ret.Operands[1], err1 = s.ToCalcTree()
+			ret.Operands[0], err0 = s.ToCalcTree()
+			err = err.AddL(err1)
+			err = err.AddL(err0)
+			return ret, err
+		} else if op.args == 1 {
+			var err0 ErrorList
+			ret := UnaryOperator{
+				ID: op.id, Function: op.function.(func(*asmInt)),
 			}
-			err = err.AddL(errCalc)
-		default:
-			retStack.push(val)
+			ret.Operand, err0 = s.ToCalcTree()
+			return ret, err.AddL(err0)
 		}
 	}
-	if len(retStack.vals) != 1 {
-		// This is a rather "internal" error and should be preceded by
-		// a more specific one, so we only print it if it isn't.
-		if len(err) == 0 {
-			err = err.AddF(ESError, "invalid RPN expression: %s", s)
-		}
-		return nil, err
-	}
-	return retStack.vals[0], err
+	return nil, err.AddF(ESError,
+		"%s not allowed in arithmetic expression", op.String(),
+	)
 }
 
-// enforceIntResult converts result to an integer in the stack's word size and
-// returns an error if this is not possible.
-func (s shuntStack) enforceIntResult(result Shuntable) (*asmInt, ErrorList) {
-	ret, err := result.Int()
-	if err.Severity() < ESError && !ret.FitsIn(s.wordsize) {
-		err = err.AddF(ESError,
-			"number exceeds %d bits: %s", s.wordsize*8, ret,
-		)
+func (s *shuntStack) ToCalcTree() (Calcable, ErrorList) {
+	root, err := s.pop()
+	switch root.(type) {
+	case nil:
+		return nil, err
+	case *shuntOp:
+		op, errOp := s.processCalcOp(root.(*shuntOp))
+		return op, err.AddL(errOp)
+	case asmInt:
+		return root.(asmInt), err
+	case asmString:
+		wordsize := s.wordsize
+		if wordsize == 1 {
+			wordsize = 0
+		}
+		integer, errInteger := root.(asmString).Int(wordsize)
+		return integer, err.AddL(errInteger)
 	}
-	return &ret, err
+	return nil, err.AddF(ESError,
+		"can't use %s in arithmetic expression", root.Thing(),
+	)
+}
+
+func (s *shuntStack) ToEmitTree() (Emittable, ErrorList) {
+	root, err := s.pop()
+	switch root.(type) {
+	case nil:
+		return nil, err
+	case *shuntOp:
+		op := root.(*shuntOp)
+		switch op.id {
+		case opDup:
+			data, errData := s.ToEmitTree()
+			count, errCount := s.ToCalcTree()
+			err = err.AddL(errData)
+			err = err.AddL(errCount)
+			return DUPOperator{count, data}, err
+		case opConcat:
+			data1, err1 := s.ToEmitTree()
+			data0, err0 := s.ToEmitTree()
+			err = err.AddL(err1)
+			err = err.AddL(err0)
+			return ConcatOperator{[2]Emittable{data0, data1}}, err
+		}
+		cOp, errCOp := s.processCalcOp(root.(*shuntOp))
+		return CalcToEmitOperator{cOp}, err.AddL(errCOp)
+	case asmInt:
+		return root.(asmInt), err.AddL(s.fitsInStack(root.(asmInt)))
+	case asmString:
+		return root.(asmString), err
+	}
+	return nil, err.AddF(ESError,
+		"can't use %s in data expression", root.Thing(),
+	)
+}
+
+// fitsInStack returns an error if v doesn't fit into the stack's word size.
+func (s shuntStack) fitsInStack(v asmInt) ErrorList {
+	if v.FitsIn(s.wordsize) {
+		return nil
+	}
+	return ErrorListF(ESError, "number exceeds %d bits: %s", s.wordsize*8, v)
 }
 
 // solveInt wraps solve and enforceIntResult.
-func (s shuntStack) solveInt() (ret *asmInt, err ErrorList) {
-	result, err := s.solve(false)
+func (s shuntStack) solveInt() (*asmInt, ErrorList) {
+	tree, err := s.ToCalcTree()
 	if err.Severity() < ESError {
-		ret, errInt := s.enforceIntResult(result)
-		return ret, err.AddL(errInt)
+		ret := tree.Calc()
+		return &ret, err.AddL(s.fitsInStack(ret))
 	}
 	return nil, err
 }
 
 // solveData evaluates the RPN stack s and returns the result as a blob of
 // data.
-func (s shuntStack) solveData() (ret []byte, err ErrorList) {
-	result, err := s.solve(true)
+func (s shuntStack) solveData() ([]byte, ErrorList) {
+	tree, err := s.ToEmitTree()
 	if err.Severity() < ESError {
-		treatAsInt := true
-		switch result.(type) {
-		case asmString:
-			if s.wordsize == 1 {
-				treatAsInt = false
-			}
-		case asmDataResult:
-			treatAsInt = false
-		}
-		if treatAsInt {
-			var errEnforce ErrorList
-			result, errEnforce = s.enforceIntResult(result)
-			err = err.AddL(errEnforce)
-		}
-		if result != nil {
-			ret = result.Data(s.wordsize)
-		}
+		return tree.Emit(s.wordsize), err
 	}
-	return ret, err
+	return nil, err
 }
 
 // evalInt wraps shunt and solveInt.

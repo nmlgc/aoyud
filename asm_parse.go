@@ -88,7 +88,7 @@ func (v asmInt) String() string {
 	return ret
 }
 
-func (v asmInt) Data(width uint) []byte {
+func (v asmInt) Emit(width uint) []byte {
 	ret := make([]byte, width)
 	rest := v.n
 	for i := uint(0); i < width; i++ {
