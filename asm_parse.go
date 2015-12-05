@@ -35,7 +35,7 @@ type Nestable interface {
 type asmInt struct {
 	n    int64  // The value itself
 	ptr  uint64 // Nonzero values turn the integer into a pointer of this length
-	base int
+	base uint8
 }
 
 func (v asmInt) Thing() string {
@@ -63,7 +63,7 @@ func (v asmInt) String() string {
 		v.base = 10
 	}
 	if v.base <= 16 {
-		ret = strconv.FormatInt(v.n, v.base)
+		ret = strconv.FormatInt(v.n, int(v.base))
 		switch v.base {
 		case 2:
 			ret += "b"
@@ -79,7 +79,7 @@ func (v asmInt) String() string {
 			}
 			ret += "h"
 		}
-	} else if v.base == 256 {
+	} else if v.base == 255 {
 		ret = quoteASCII(v.formatASCII())
 	}
 	if v.ptr != 0 {
@@ -122,7 +122,7 @@ func isAsmInt(input string) bool {
 // newAsmInt parses the input as an integer constant.
 func newAsmInt(input string) (asmInt, ErrorList) {
 	length := len(input)
-	base := 0
+	base := uint8(0)
 	switch unicode.ToLower(rune(input[length-1])) {
 	case 'b':
 		base = 2
@@ -138,7 +138,7 @@ func newAsmInt(input string) (asmInt, ErrorList) {
 	} else {
 		base = 10
 	}
-	n, err := strconv.ParseInt(input, base, 0)
+	n, err := strconv.ParseInt(input, int(base), 0)
 	if err != nil {
 		return asmInt{}, NewErrorList(ESError, err)
 	}

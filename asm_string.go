@@ -25,7 +25,7 @@ func (v asmString) String() string {
 }
 
 func (v asmString) Int(wordsize uint) (asmInt, ErrorList) {
-	ret := asmInt{base: 256}
+	ret := asmInt{base: 255}
 	if wordsize < 1 || wordsize > maxbytes {
 		wordsize = maxbytes
 	}
