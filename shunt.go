@@ -145,6 +145,7 @@ var binaryOperators = shuntOpMap{
 
 type Emittable interface {
 	Emit() []byte
+	Len() uint
 }
 
 // Since you can only go from integers to bytes, but not back, this saves us
@@ -161,6 +162,10 @@ func (cte CalcToEmitOperator) Emit() []byte {
 	return cte.Calc.Calc().Emit()
 }
 
+func (cte CalcToEmitOperator) Len() uint {
+	return cte.Calc.Calc().Len()
+}
+
 type DUPOperator struct {
 	Count Calcable
 	Data  Emittable
@@ -174,6 +179,10 @@ func (dup DUPOperator) Emit() []byte {
 	return bytes.Repeat(dup.Data.Emit(), int(dup.Count.Calc().n))
 }
 
+func (dup DUPOperator) Len() uint {
+	return dup.Data.Len() * uint(dup.Count.Calc().n)
+}
+
 type ConcatOperator struct {
 	Data [2]Emittable
 }
@@ -185,6 +194,10 @@ func (cc ConcatOperator) String() string {
 func (cc ConcatOperator) Emit() (ret []byte) {
 	ret = append(ret, cc.Data[0].Emit()...)
 	return append(ret, cc.Data[1].Emit()...)
+}
+
+func (cc ConcatOperator) Len() uint {
+	return cc.Data[0].Len() + cc.Data[1].Len()
 }
 
 type Calcable interface {

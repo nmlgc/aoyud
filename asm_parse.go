@@ -99,6 +99,10 @@ func (v asmInt) Emit() []byte {
 	return ret
 }
 
+func (v asmInt) Len() uint {
+	return uint(v.wordsize)
+}
+
 // FitsIn returns whether n can fit in the given number of bytes.
 func (v asmInt) FitsIn(bytes uint) bool {
 	// In fact, 64-bit declarations in JWasm don't limit the value at all.

@@ -44,6 +44,10 @@ func (v asmString) Emit() []byte {
 	return []byte(v)
 }
 
+func (v asmString) Len() uint {
+	return uint(len(v))
+}
+
 func (v asmInt) formatASCII() string {
 	ret := make([]byte, maxbytes)
 	rest := v.n
