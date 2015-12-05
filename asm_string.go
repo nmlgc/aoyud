@@ -40,7 +40,7 @@ func (v asmString) Int(wordsize uint) (asmInt, ErrorList) {
 	return ret, nil
 }
 
-func (v asmString) Emit(width uint) []byte {
+func (v asmString) Emit() []byte {
 	return []byte(v)
 }
 

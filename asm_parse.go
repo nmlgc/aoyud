@@ -33,9 +33,10 @@ type Nestable interface {
 
 // asmInt represents an integer that will be output in a defined base.
 type asmInt struct {
-	n    int64  // The value itself
-	ptr  uint64 // Nonzero values turn the integer into a pointer of this length
-	base uint8
+	n        int64  // The value itself
+	ptr      uint64 // Nonzero values turn the integer into a pointer of this length
+	base     uint8
+	wordsize uint8 // Number of bytes to be produced on Emit()
 }
 
 func (v asmInt) Thing() string {
@@ -88,11 +89,11 @@ func (v asmInt) String() string {
 	return ret
 }
 
-func (v asmInt) Emit(width uint) []byte {
-	ret := make([]byte, width)
+func (v asmInt) Emit() []byte {
+	ret := make([]byte, v.wordsize)
 	rest := v.n
-	for i := uint(0); i < width; i++ {
-		ret[width-1-i] = byte(rest & 0xFF)
+	for i := uint8(0); i < v.wordsize; i++ {
+		ret[v.wordsize-1-i] = byte(rest & 0xFF)
 		rest >>= 8
 	}
 	return ret

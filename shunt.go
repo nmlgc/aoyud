@@ -144,7 +144,7 @@ var binaryOperators = shuntOpMap{
 }
 
 type Emittable interface {
-	Emit(width uint) []byte
+	Emit() []byte
 }
 
 // Since you can only go from integers to bytes, but not back, this saves us
@@ -157,8 +157,8 @@ func (cte CalcToEmitOperator) String() string {
 	return cte.Calc.String()
 }
 
-func (cte CalcToEmitOperator) Emit(width uint) []byte {
-	return cte.Calc.Calc().Emit(width)
+func (cte CalcToEmitOperator) Emit() []byte {
+	return cte.Calc.Calc().Emit()
 }
 
 type DUPOperator struct {
@@ -170,8 +170,8 @@ func (dup DUPOperator) String() string {
 	return fmt.Sprintf("(%s DUP(%s))", dup.Count, dup.Data)
 }
 
-func (dup DUPOperator) Emit(width uint) []byte {
-	return bytes.Repeat(dup.Data.Emit(width), int(dup.Count.Calc().n))
+func (dup DUPOperator) Emit() []byte {
+	return bytes.Repeat(dup.Data.Emit(), int(dup.Count.Calc().n))
 }
 
 type ConcatOperator struct {
@@ -182,9 +182,9 @@ func (cc ConcatOperator) String() string {
 	return fmt.Sprintf("(%s, %s)", cc.Data[0], cc.Data[1])
 }
 
-func (cc ConcatOperator) Emit(width uint) (ret []byte) {
-	ret = append(ret, cc.Data[0].Emit(width)...)
-	return append(ret, cc.Data[1].Emit(width)...)
+func (cc ConcatOperator) Emit() (ret []byte) {
+	ret = append(ret, cc.Data[0].Emit()...)
+	return append(ret, cc.Data[1].Emit()...)
 }
 
 type Calcable interface {
@@ -307,7 +307,11 @@ func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err Err
 		}
 		switch token.(type) {
 		case asmInt:
-			state.retStack.push(token)
+			// Needs to be here since we also need to take care of predefined
+			// constants like '?'.
+			integer := token.(asmInt)
+			integer.wordsize = uint8(state.retStack.wordsize)
+			state.retStack.push(integer)
 			state.opSet = &binaryOperators
 		case asmString:
 			if state.retStack.wordsize > 1 {
@@ -463,7 +467,7 @@ func (s shuntStack) solveInt() (*asmInt, ErrorList) {
 func (s shuntStack) solveData() ([]byte, ErrorList) {
 	tree, err := s.ToEmitTree()
 	if err.Severity() < ESError {
-		return tree.Emit(s.wordsize), err
+		return tree.Emit(), err
 	}
 	return nil, err
 }
