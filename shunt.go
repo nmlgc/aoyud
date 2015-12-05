@@ -475,16 +475,6 @@ func (s shuntStack) solveInt() (*asmInt, ErrorList) {
 	return nil, err
 }
 
-// solveData evaluates the RPN stack s and returns the result as a blob of
-// data.
-func (s shuntStack) solveData() ([]byte, ErrorList) {
-	tree, err := s.ToEmitTree()
-	if err.Severity() < ESError {
-		return tree.Emit(), err
-	}
-	return nil, err
-}
-
 // evalInt wraps shunt and solveInt.
 func (s *SymMap) evalInt(pos ItemPos, expr string) (*asmInt, ErrorList) {
 	rpnStack, err := s.shunt(pos, expr, maxbytes)
@@ -505,12 +495,12 @@ func (s *SymMap) evalBool(pos ItemPos, expr string) (bool, ErrorList) {
 	return false, err
 }
 
-// evalData wraps shunt and solveData.
-func (s *SymMap) evalData(pos ItemPos, expr string, wordsize uint) ([]byte, ErrorList) {
+// shuntData wraps shunt and ToEmitTree.
+func (s *SymMap) shuntData(pos ItemPos, expr string, wordsize uint) (Emittable, ErrorList) {
 	rpnStack, err := s.shunt(pos, expr, wordsize)
 	if err.Severity() < ESError {
-		ret, errSolve := rpnStack.solveData()
-		return ret, err.AddL(errSolve)
+		tree, errTree := rpnStack.ToEmitTree()
+		return tree, err.AddL(errTree)
 	}
 	return nil, err
 }

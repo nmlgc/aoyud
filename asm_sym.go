@@ -114,7 +114,10 @@ func (s *SymMap) Set(name string, val asmVal, constant bool) ErrorList {
 			if a.off == nil {
 				return true
 			}
-			return a.seg == b.seg && a.off == b.off && a.w == b.w
+			return a.et == b.et &&
+				a.chunk == b.chunk &&
+				a.off == b.off &&
+				a.w == b.w
 		}
 		return false
 	}

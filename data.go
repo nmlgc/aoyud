@@ -16,13 +16,51 @@ import (
 	"strings"
 )
 
-type asmDataChunk []byte
+// EmissionTarget represents a container that can hold data declarations, i.e.
+// a segment or structure.
+type EmissionTarget interface {
+	Name() string
+	// Offset returns the chunk and offset at the end of the emission target's
+	// data block.
+	Offset() (chunk uint, off uint64)
+	// AddPointer adds the given pointer to the global symbol table (if the
+	// symbol is supposed to be public) or the type's own one (if it has one).
+	AddPointer(p *parser, sym string, ptr asmDataPtr) (err ErrorList)
+	// AddData appends the given blob to the emission target's data block.
+	AddData(blob Emittable) (err ErrorList)
+	// WordSize returns the maximum number of bytes allowed for addresses.
+	WordSize() uint8
+}
+
+// BlobList lists all blobs of a single data chunk by storing the same blob
+// pointer for every byte it occupies. This allows easy random access of each
+// byte within a chunk while also simplifying access to neighboring blobs.
+type BlobList []*Emittable
+
+func (l BlobList) Append(blob Emittable) BlobList {
+	for i := uint(0); i < blob.Len(); i++ {
+		l = append(l, &blob)
+	}
+	return l
+}
+
+func (l BlobList) Emit() (ret []byte) {
+	var last *Emittable = nil
+	for _, cur := range l {
+		if cur != last {
+			ret = append(ret, (*cur).Emit()...)
+			last = cur
+		}
+	}
+	return ret
+}
 
 // asmDataPtr represents a pointer to data in a specific segment.
 type asmDataPtr struct {
-	seg *asmSegment
-	off *uint64 // nil = unknown position (used during pass 1)
-	w   uint
+	et    EmissionTarget
+	chunk uint
+	off   *uint64 // nil = unknown position (used during pass 1)
+	w     uint
 }
 
 func (p asmDataPtr) Thing() string {
@@ -30,14 +68,14 @@ func (p asmDataPtr) Thing() string {
 }
 
 func (p asmDataPtr) String() string {
-	var offChars int = int(p.seg.wordsize * 2)
+	var offChars int = int(p.et.WordSize() * 2)
 	var offStr string
 	if p.off == nil {
 		offStr = strings.Repeat("?", offChars)
 	} else {
 		offStr = fmt.Sprintf("%0*xh", offChars, *p.off)
 	}
-	return fmt.Sprintf("(%d*) %s:", p.w, p.seg.name) + offStr
+	return fmt.Sprintf("(%d*) %s:%d:", p.w, p.et.Name(), p.chunk) + offStr
 }
 
 func (p asmDataPtr) width() uint {
@@ -46,16 +84,17 @@ func (p asmDataPtr) width() uint {
 
 type asmSegment struct {
 	name       string
-	overflowed bool
-	chunks     []asmDataChunk
-	wordsize   uint
+	chunks     []BlobList  // List of all contiguous data blocks
 	prev       *asmSegment // in order to easily handle nested segments
+	overflowed bool
+	wordsize   uint8
 }
 
 func (s asmSegment) Thing() string      { return "segment name" }
 func (s asmSegment) OpenThing() string  { return "open segment" }
 func (s asmSegment) OpenThings() string { return "open segments" }
 func (s asmSegment) Name() string       { return s.name }
+func (s asmSegment) WordSize() uint8    { return s.wordsize }
 
 func (s asmSegment) Prev() Nestable {
 	if s.prev != nil {
@@ -79,26 +118,47 @@ func (s asmSegment) width() uint {
 	return uint(ret)
 }
 
-func (s *asmSegment) Append(blob []byte) (err ErrorList) {
+func (s *asmSegment) AddData(blob Emittable) (err ErrorList) {
 	maxSize := uint64((1 << (s.wordsize * 8)) - 1)
-	if uint64(len(blob))+uint64(s.width()) > maxSize && !s.overflowed {
+	if uint64(blob.Len()+s.width()) > maxSize && !s.overflowed {
 		s.overflowed = true
 		err = err.AddF(ESError,
 			"declaration overflows %d-bit segment: %s", s.wordsize*8, s.Name(),
 		)
 	}
 	if len(s.chunks) == 0 {
-		s.chunks = make([]asmDataChunk, 1)
+		s.chunks = make([]BlobList, 1)
 	}
 	chunk := len(s.chunks) - 1
-	s.chunks[chunk] = append(s.chunks[chunk], blob...)
+	s.chunks[chunk] = s.chunks[chunk].Append(blob)
 	return err
 }
 
-func (s *asmSegment) OffsetToEnd(p *parser) (ret *uint64) {
-	if p.pass2 {
-		width := uint64(s.width())
-		ret = &width
+func (s *asmSegment) Offset() (chunk uint, off uint64) {
+	if len(s.chunks) != 0 {
+		chunk = uint(len(s.chunks) - 1)
+		off = uint64(len(s.chunks[chunk]))
 	}
-	return ret
+	return chunk, off
+}
+
+func (s *asmSegment) AddPointer(p *parser, sym string, ptr asmDataPtr) (err ErrorList) {
+	return p.syms.Set(sym, ptr, true)
+}
+
+func (p *parser) CurrentEmissionTarget() EmissionTarget {
+	return p.seg
+}
+
+func (p *parser) EmitPointer(sym string, width uint) (err ErrorList) {
+	if sym == "" {
+		return err
+	}
+	et := p.CurrentEmissionTarget()
+	chunk, off := et.Offset()
+	ptr := asmDataPtr{et: et, chunk: chunk, w: width}
+	if p.pass2 {
+		ptr.off = &off
+	}
+	return et.AddPointer(p, sym, ptr)
 }

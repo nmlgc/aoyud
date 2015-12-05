@@ -852,7 +852,7 @@ func CPU(p *parser, it *item) ErrorList {
 }
 
 func SEGMENT(p *parser, it *item) ErrorList {
-	cpuWordSize := uint(p.syms.Map["@WORDSIZE"].Val.(asmInt).n) // can never fail
+	cpuWordSize := uint8(p.syms.Map["@WORDSIZE"].Val.(asmInt).n) // can never fail
 	seg := &asmSegment{}
 	var old asmVal
 	var errList ErrorList
@@ -930,15 +930,14 @@ func DATA(p *parser, it *item) (err ErrorList) {
 	if p.seg == nil {
 		return nil
 	}
-	if it.sym != "" {
-		ptr := asmDataPtr{seg: p.seg, off: p.seg.OffsetToEnd(p), w: wordsize}
-		err = p.syms.Set(it.sym, ptr, true)
-	}
+	err = p.EmitPointer(it.sym, wordsize)
 	if p.pass2 {
 		for _, param := range it.params {
-			blob, errData := p.syms.evalData(it.pos, param, wordsize)
+			blob, errData := p.syms.shuntData(it.pos, param, wordsize)
 			err = err.AddL(errData)
-			err = err.AddL(p.seg.Append(blob))
+			if errData.Severity() < ESError {
+				err = err.AddL(p.CurrentEmissionTarget().AddData(blob))
+			}
 		}
 	}
 	return err
@@ -946,9 +945,8 @@ func DATA(p *parser, it *item) (err ErrorList) {
 
 func LABEL(p *parser, it *item) ErrorList {
 	size, err := p.syms.evalInt(it.pos, it.params[0])
-	if size != nil && p.seg != nil {
-		ptr := asmDataPtr{seg: p.seg, off: p.seg.OffsetToEnd(p), w: uint(size.n)}
-		return err.AddL(p.syms.Set(it.sym, ptr, true))
+	if err.Severity() < ESError {
+		err = err.AddL(p.EmitPointer(it.sym, uint(size.n)))
 	}
 	return err
 }
