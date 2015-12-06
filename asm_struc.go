@@ -92,7 +92,7 @@ func (v *asmStruc) Offset() (chunk uint, off uint64) {
 }
 
 func (v *asmStruc) AddPointer(p *parser, sym string, ptr asmDataPtr) (err ErrorList) {
-	if v.prev == nil {
+	if v.prev == nil && p.syntax == "TASM" {
 		err = p.syms.Set(sym, ptr, true)
 	}
 	return err.AddL(v.members.Set(sym, ptr, true))
