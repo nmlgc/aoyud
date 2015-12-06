@@ -154,6 +154,7 @@ func (p *parser) lexItem(stream *lexStream) (ret *item, err ErrorList) {
 		context = k.Type
 	} else if k, ok := Keywords[secondUpper]; ok {
 		second = secondUpper
+		context = k.Type
 		secondRule = k.Sym
 	} else if val, errLookup := p.syms.Lookup(first); val != nil {
 		err = err.AddLAt(pos, errLookup)

@@ -5,7 +5,8 @@ type charGroup []byte
 var linebreak = charGroup{'\r', '\n'}
 var whitespace = charGroup{' ', '\t'}
 var quotes = charGroup{'\'', '"'}
-var paramDelim = append(charGroup{',', ';'}, linebreak...)
+var lineDelim = append(charGroup{';'}, linebreak...)
+var paramDelim = append(charGroup{','}, lineDelim...)
 var insDelim = append(append(charGroup{':', '='}, whitespace...), paramDelim...)
 var shuntDelim = append(charGroup{
 	'+', '-', '*', '/', '|', '(', ')', '[', ']', '<', '>', ':', '&', '"', '\'', ',',
@@ -112,7 +113,7 @@ func (s *lexStream) nextSegmentParam() (ret string, err ErrorList) {
 }
 
 // nextParam consumes and returns the next parameter to an instruction, taking
-// the nesting rules for the given into account.
+// the nesting rules for the given context into account.
 func (s *lexStream) nextParam(context KeywordType) string {
 
 	// nestChars maps the start delimiter of the various nesting levels used
@@ -128,6 +129,10 @@ func (s *lexStream) nextParam(context KeywordType) string {
 	if (context & HighLevel) != 0 {
 		delete(nestChars, '<')
 	}
+	delim := paramDelim
+	if (context & SingleParam) != 0 {
+		delim = lineDelim
+	}
 
 	type nestLevel struct {
 		delim byte
@@ -139,7 +144,7 @@ func (s *lexStream) nextParam(context KeywordType) string {
 
 	s.ignore(whitespace)
 	start := s.c
-	for !(nest == nil && paramDelim.matches(s.peek())) && s.peek() != eof {
+	for !(nest == nil && delim.matches(s.peek())) && s.peek() != eof {
 		b := s.next()
 
 		if nest == nil && b == '\\' {

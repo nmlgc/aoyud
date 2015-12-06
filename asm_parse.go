@@ -929,12 +929,10 @@ func DATA(p *parser, it *item) (err ErrorList) {
 	}[it.val]
 	err = err.AddL(p.EmitPointer(it.sym, wordsize))
 	if p.pass2 {
-		for _, param := range it.params {
-			blob, errData := p.syms.shuntData(it.pos, param, wordsize)
-			err = err.AddL(errData)
-			if errData.Severity() < ESError {
-				err = err.AddL(p.CurrentEmissionTarget().AddData(blob))
-			}
+		blob, errData := p.syms.shuntData(it.pos, it.params[0], wordsize)
+		err = err.AddL(errData)
+		if errData.Severity() < ESError {
+			err = err.AddL(p.CurrentEmissionTarget().AddData(blob))
 		}
 	}
 	return err

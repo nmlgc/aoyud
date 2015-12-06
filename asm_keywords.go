@@ -3,11 +3,12 @@ package main
 type KeywordType int
 
 const (
-	Data      KeywordType = (1 << iota) // Can't appear outside of a segment
-	NoStruct              = (1 << iota) // Can't appear inside a STRUC or UNION
-	Evaluated             = (1 << iota) // Not kept in the parser's instruction list
-	HighLevel             = (1 << iota) // Parsed as a HLL directive
-	Macro                 = (1 << iota)
+	Data        KeywordType = (1 << iota) // Can't appear outside of a segment
+	NoStruct                = (1 << iota) // Can't appear inside a STRUC or UNION
+	Evaluated               = (1 << iota) // Not kept in the parser's instruction list
+	HighLevel               = (1 << iota) // Parsed as a HLL directive
+	Macro                   = (1 << iota)
+	SingleParam             = (1 << iota) // Don't split instruction parameters at commas
 
 	Conditional = (1 << iota) | Evaluated
 	Code        = Data | NoStruct
@@ -37,7 +38,7 @@ func init() {
 	}
 
 	cpu := Keyword{CPU, NotAllowed, 0, req(0)}
-	data := Keyword{DATA, Optional, Data, Range{1, -1}}
+	data := Keyword{DATA, Optional, Data | SingleParam, req(1)}
 	hll := Keyword{nil, NotAllowed, HighLevel, req(1)}
 
 	Keywords = map[string]Keyword{
