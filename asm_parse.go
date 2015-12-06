@@ -927,10 +927,7 @@ func DATA(p *parser, it *item) (err ErrorList) {
 	wordsize := map[string]uint{
 		"DB": 1, "DW": 2, "DD": 4, "DF": 6, "DP": 6, "DQ": 8, "DT": 10,
 	}[it.val]
-	if p.seg == nil {
-		return nil
-	}
-	err = p.EmitPointer(it.sym, wordsize)
+	err = err.AddL(p.EmitPointer(it.sym, wordsize))
 	if p.pass2 {
 		for _, param := range it.params {
 			blob, errData := p.syms.shuntData(it.pos, param, wordsize)

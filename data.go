@@ -55,7 +55,7 @@ func (l BlobList) Emit() (ret []byte) {
 	return ret
 }
 
-// asmDataPtr represents a pointer to data in a specific segment.
+// asmDataPtr represents a pointer to data in a specific segment or structure.
 type asmDataPtr struct {
 	et    EmissionTarget
 	chunk uint
@@ -147,6 +147,10 @@ func (s *asmSegment) AddPointer(p *parser, sym string, ptr asmDataPtr) (err Erro
 }
 
 func (p *parser) CurrentEmissionTarget() EmissionTarget {
+	// It is possible to open structures inside segments, but not vice versa.
+	if p.struc != nil {
+		return p.struc
+	}
 	return p.seg
 }
 
