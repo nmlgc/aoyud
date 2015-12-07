@@ -105,21 +105,41 @@ func (s *SymMap) Set(name string, val asmVal, constant bool) ErrorList {
 	// Maybe the asmVal interface should have received a Equal()
 	// method, but given the fact that most types are constant anyway…
 	redefinable := func(a, b asmVal) bool {
-		switch a.(type) {
-		case asmInt:
-			a, b := a.(asmInt), b.(asmInt)
-			return a.n == b.n && a.ptr == b.ptr
-		case asmDataPtr:
-			a, b := a.(asmDataPtr), b.(asmDataPtr)
-			if a.off == nil || b.off == nil {
-				return true
+		redefinableVal := func(a, b asmVal) bool {
+			switch a.(type) {
+			case asmInt:
+				a, b := a.(asmInt), b.(asmInt)
+				return a.n == b.n && a.ptr == b.ptr
+			case asmDataPtr:
+				a, b := a.(asmDataPtr), b.(asmDataPtr)
+				if a.off == nil || b.off == nil {
+					return true
+				}
+				return a.et.Name() == b.et.Name() &&
+					a.chunk == b.chunk &&
+					*a.off == *b.off &&
+					a.w == b.w
 			}
-			return a.et.Name() == b.et.Name() &&
-				a.chunk == b.chunk &&
-				*a.off == *b.off &&
-				a.w == b.w
+			return false
 		}
-		return false
+		switch a.(type) {
+		case asmStruc:
+			a, b := a.(asmStruc), b.(asmStruc)
+			ret := a.flag == b.flag && len(a.data) == len(b.data)
+			for i, valB := range b.members.Map {
+				valA, ok := a.members.Map[i]
+				ret = ret && ok &&
+					(reflect.TypeOf(valA.Val) == reflect.TypeOf(valB.Val))
+
+				switch valA.Val.(type) {
+				case asmStruc: // do nothing
+				default:
+					ret = ret && redefinableVal(valA.Val, valB.Val)
+				}
+			}
+			return ret
+		}
+		return redefinableVal(a, b)
 	}
 
 	realName := s.ToSymCase(name)
