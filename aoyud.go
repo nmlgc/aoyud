@@ -291,4 +291,15 @@ func main() {
 	ErrorListFAt(NewItemPos(filename, 0), ESDebug,
 		"Symbols: [\n%s\n]", p.syms,
 	).Print()
+
+	for _, sym := range p.syms.Map {
+		switch sym.Val.(type) {
+		case *asmSegment:
+			seg := sym.Val.(*asmSegment)
+			if len(seg.chunks) == 1 && len(seg.chunks[0]) > 0 {
+				dumpfile := *filename + "." + seg.Name() + ".bin"
+				ioutil.WriteFile(dumpfile, seg.chunks[0].Emit(), os.ModePerm)
+			}
+		}
+	}
 }
