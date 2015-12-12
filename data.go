@@ -57,6 +57,7 @@ func (l BlobList) Emit() (ret []byte) {
 
 // asmDataPtr represents a pointer to data in a specific segment or structure.
 type asmDataPtr struct {
+	sym   *string // necessary for reverse lookup
 	et    EmissionTarget
 	chunk uint
 	off   *uint64 // nil = unknown position (used during pass 1)
@@ -160,7 +161,7 @@ func (p *parser) EmitPointer(sym string, width uint) (err ErrorList) {
 	}
 	et := p.CurrentEmissionTarget()
 	chunk, off := et.Offset()
-	ptr := asmDataPtr{et: et, chunk: chunk, w: width}
+	ptr := asmDataPtr{sym: &sym, et: et, chunk: chunk, w: width}
 	if p.pass2 {
 		ptr.off = &off
 	}
