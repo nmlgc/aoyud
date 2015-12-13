@@ -112,12 +112,14 @@ func (s *SymMap) Set(name string, val asmVal, constant bool) ErrorList {
 				return a.n == b.n && a.ptr == b.ptr
 			case asmDataPtr:
 				a, b := a.(asmDataPtr), b.(asmDataPtr)
-				if a.off == nil || b.off == nil {
+				// TODO: Temporary kludge to keep pointers working while we're
+				// migrating to a smarter pass system.
+				if a.off == 0 {
 					return true
 				}
 				return a.et.Name() == b.et.Name() &&
 					a.chunk == b.chunk &&
-					*a.off == *b.off &&
+					a.off == b.off &&
 					a.w == b.w
 			}
 			return false

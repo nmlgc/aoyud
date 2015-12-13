@@ -13,7 +13,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 )
 
 // EmissionTarget represents a container that can hold data declarations, i.e.
@@ -60,7 +59,7 @@ type asmDataPtr struct {
 	sym   *string // necessary for reverse lookup
 	et    EmissionTarget
 	chunk uint
-	off   *uint64 // nil = unknown position (used during pass 1)
+	off   uint64
 	w     uint
 }
 
@@ -70,13 +69,9 @@ func (p asmDataPtr) Thing() string {
 
 func (p asmDataPtr) String() string {
 	var offChars int = int(p.et.WordSize() * 2)
-	var offStr string
-	if p.off == nil {
-		offStr = strings.Repeat("?", offChars)
-	} else {
-		offStr = fmt.Sprintf("%0*xh", offChars, *p.off)
-	}
-	return fmt.Sprintf("(%d*) %s:%d:", p.w, p.et.Name(), p.chunk) + offStr
+	return fmt.Sprintf(
+		"(%d*) %s:%d:%0*xh", p.w, p.et.Name(), p.chunk, offChars, p.off,
+	)
 }
 
 func (p asmDataPtr) width() uint {
@@ -163,7 +158,7 @@ func (p *parser) EmitPointer(sym string, width uint) (err ErrorList) {
 	chunk, off := et.Offset()
 	ptr := asmDataPtr{sym: &sym, et: et, chunk: chunk, w: width}
 	if p.pass2 {
-		ptr.off = &off
+		ptr.off = off
 	}
 	return et.AddPointer(p, sym, ptr)
 }
