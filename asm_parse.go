@@ -14,7 +14,6 @@ type Thingy interface {
 }
 
 type asmVal interface {
-	width() uint // Returns the width in bytes of the data value
 	Thingy
 	fmt.Stringer
 }
@@ -157,10 +156,6 @@ func (v asmExpression) Thing() string {
 	return "arithmetic expression"
 }
 
-func (v asmExpression) width() uint {
-	return uint(len(v))
-}
-
 func (v asmExpression) String() string {
 	return "(" + string(v) + ")"
 }
@@ -190,10 +185,6 @@ type asmMacro struct {
 
 func (v asmMacro) Thing() string {
 	return "multiline macro"
-}
-
-func (v asmMacro) width() uint {
-	return 0
 }
 
 func (v asmMacro) String() string {

@@ -16,10 +16,6 @@ func (v asmString) Thing() string {
 	return "string constant"
 }
 
-func (v asmString) width() uint {
-	return uint(len(v))
-}
-
 func (v asmString) String() string {
 	return strconv.Quote(string(v))
 }
