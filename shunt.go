@@ -60,12 +60,12 @@ func (op *shuntOp) String() string {
 type shuntOpMap map[string]shuntOp
 
 type shuntStack struct {
-	vals     []Thingy
-	wordsize uint
+	vals []Thingy
+	unit DataUnit
 }
 
 func (stack *shuntStack) String() string {
-	return fmt.Sprintf("%v (%d-bit)", stack.vals, stack.wordsize*8)
+	return fmt.Sprintf("%v (%d-byte units)", stack.vals, stack.unit.Width())
 }
 
 func (stack *shuntStack) push(element Thingy) {
@@ -312,6 +312,7 @@ type shuntState struct {
 
 func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err ErrorList) {
 	stream := NewLexStreamAt(pos, expr)
+	wordsize := state.retStack.unit.Width()
 	for stream.peek() != eof && err.Severity() < ESError {
 		token, errToken := s.nextShuntToken(stream, state.opSet)
 		err = err.AddL(errToken)
@@ -323,13 +324,13 @@ func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err Err
 			// Needs to be here since we also need to take care of predefined
 			// constants like '?'.
 			integer := token.(asmInt)
-			integer.wordsize = uint8(state.retStack.wordsize)
+			integer.wordsize = uint8(wordsize)
 			state.retStack.push(integer)
 			state.opSet = &binaryOperators
 		case asmString:
-			if state.retStack.wordsize > 1 {
+			if wordsize > 1 {
 				var errInt ErrorList
-				token, errInt = token.(asmString).Int(state.retStack.wordsize)
+				token, errInt = token.(asmString).Int(wordsize)
 				err = err.AddL(errInt)
 			}
 			state.retStack.push(token)
@@ -356,10 +357,10 @@ func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err Err
 
 // shunt converts the arithmetic expression in expr into an RPN stack with the
 // given word size.
-func (s *SymMap) shunt(pos ItemPos, expr string, wordsize uint) (stack *shuntStack, err ErrorList) {
+func (s *SymMap) shunt(pos ItemPos, expr string, unit DataUnit) (stack *shuntStack, err ErrorList) {
 	state := &shuntState{
 		opSet:    &unaryOperators,
-		retStack: shuntStack{wordsize: wordsize},
+		retStack: shuntStack{unit: unit},
 	}
 	if err = s.shuntLoop(state, pos, expr); err.Severity() >= ESError {
 		return nil, err
@@ -412,7 +413,7 @@ func (s *shuntStack) ToCalcTree() (Calcable, ErrorList) {
 	case asmInt:
 		return root.(asmInt), err
 	case asmString:
-		wordsize := s.wordsize
+		wordsize := s.unit.Width()
 		if wordsize == 1 {
 			wordsize = 0
 		}
@@ -459,10 +460,11 @@ func (s *shuntStack) ToEmitTree() (Emittable, ErrorList) {
 
 // fitsInStack returns an error if v doesn't fit into the stack's word size.
 func (s shuntStack) fitsInStack(v asmInt) ErrorList {
-	if v.FitsIn(s.wordsize) {
+	wordsize := s.unit.Width()
+	if v.FitsIn(wordsize) {
 		return nil
 	}
-	return ErrorListF(ESError, "number exceeds %d bits: %s", s.wordsize*8, v)
+	return ErrorListF(ESError, "number exceeds %d bits: %s", wordsize*8, v)
 }
 
 // solveInt wraps solve and enforceIntResult.
@@ -477,7 +479,7 @@ func (s shuntStack) solveInt() (*asmInt, ErrorList) {
 
 // evalInt wraps shunt and solveInt.
 func (s *SymMap) evalInt(pos ItemPos, expr string) (*asmInt, ErrorList) {
-	rpnStack, err := s.shunt(pos, expr, maxbytes)
+	rpnStack, err := s.shunt(pos, expr, SimpleData(maxbytes))
 	if err.Severity() < ESError {
 		ret, errSolve := rpnStack.solveInt()
 		return ret, err.AddL(errSolve)
@@ -496,8 +498,8 @@ func (s *SymMap) evalBool(pos ItemPos, expr string) (bool, ErrorList) {
 }
 
 // shuntData wraps shunt and ToEmitTree.
-func (s *SymMap) shuntData(pos ItemPos, expr string, wordsize uint) (Emittable, ErrorList) {
-	rpnStack, err := s.shunt(pos, expr, wordsize)
+func (s *SymMap) shuntData(pos ItemPos, expr string, unit DataUnit) (Emittable, ErrorList) {
+	rpnStack, err := s.shunt(pos, expr, unit)
 	if err.Severity() < ESError {
 		tree, errTree := rpnStack.ToEmitTree()
 		return tree, err.AddL(errTree)

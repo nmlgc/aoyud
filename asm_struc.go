@@ -52,15 +52,15 @@ func (v asmStruc) String() string {
 	if v.flag == sUnion {
 		typ = "UNION"
 	}
-	return fmt.Sprintf("%s (%d bytes)\n%s", typ, v.width(), v.members.Dump(1))
+	return fmt.Sprintf("%s (%d bytes)\n%s", typ, v.Width(), v.members.Dump(1))
 }
 
-func (v asmStruc) width() uint {
+func (v asmStruc) Width() uint {
 	return uint(len(v.data))
 }
 
 func (v *asmStruc) AddData(blob Emittable) (err ErrorList) {
-	if v.flag == sUnion && v.width() > 0 {
+	if v.flag == sUnion && v.Width() > 0 {
 		data := blob.Emit()
 		for i := range data {
 			if data[i] != 0 {
@@ -70,10 +70,10 @@ func (v *asmStruc) AddData(blob Emittable) (err ErrorList) {
 				break
 			}
 		}
-		if v.width() >= blob.Len() {
+		if v.Width() >= blob.Len() {
 			return err
 		} else {
-			padlen := int(blob.Len() - v.width())
+			padlen := int(blob.Len() - v.Width())
 			blob = asmString(strings.Repeat("\x00", padlen))
 		}
 	}
@@ -100,7 +100,7 @@ func (v *asmStruc) AddPointer(p *parser, sym string, ptr asmDataPtr) (err ErrorL
 
 func (v asmStruc) WordSize() uint8 {
 	ret := uint8(0)
-	for w := v.width(); w > 0; w >>= 8 {
+	for w := v.Width(); w > 0; w >>= 8 {
 		ret++
 	}
 	return ret

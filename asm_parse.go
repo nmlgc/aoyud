@@ -919,7 +919,7 @@ func ENDS(p *parser, it *item) (err ErrorList) {
 }
 
 func DATA(p *parser, it *item) (err ErrorList) {
-	wordsize := map[string]uint{
+	wordsize := map[string]SimpleData{
 		"DB": 1, "DW": 2, "DD": 4, "DF": 6, "DP": 6, "DQ": 8, "DT": 10,
 	}[it.val]
 	err = err.AddL(p.EmitPointer(it.sym, wordsize))
@@ -941,7 +941,7 @@ func DATA(p *parser, it *item) (err ErrorList) {
 func LABEL(p *parser, it *item) ErrorList {
 	size, err := p.syms.evalInt(it.pos, it.params[0])
 	if err.Severity() < ESError {
-		err = err.AddL(p.EmitPointer(it.sym, uint(size.n)))
+		err = err.AddL(p.EmitPointer(it.sym, SimpleData(size.n)))
 	}
 	return err
 }

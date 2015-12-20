@@ -15,6 +15,17 @@ import (
 	"fmt"
 )
 
+// DataUnit represents the size of an emittable data type.
+type DataUnit interface {
+	Width() uint
+}
+
+type SimpleData uint
+
+func (d SimpleData) Width() uint {
+	return uint(d)
+}
+
 // EmissionTarget represents a container that can hold data declarations, i.e.
 // a segment or structure.
 type EmissionTarget interface {
@@ -60,7 +71,7 @@ type asmDataPtr struct {
 	et    EmissionTarget
 	chunk uint
 	off   uint64
-	w     uint
+	unit  DataUnit
 }
 
 func (p asmDataPtr) Thing() string {
@@ -69,13 +80,13 @@ func (p asmDataPtr) Thing() string {
 
 func (p asmDataPtr) String() string {
 	var offChars int = int(p.et.WordSize() * 2)
-	return fmt.Sprintf(
-		"(%d*) %s:%d:%0*xh", p.w, p.et.Name(), p.chunk, offChars, p.off,
+	return fmt.Sprintf("(%d*) %s:%d:%0*xh",
+		p.unit.Width(), p.et.Name(), p.chunk, offChars, p.off,
 	)
 }
 
-func (p asmDataPtr) width() uint {
-	return p.w
+func (p asmDataPtr) Width() uint {
+	return p.unit.Width()
 }
 
 type asmSegment struct {
@@ -150,13 +161,13 @@ func (p *parser) CurrentEmissionTarget() EmissionTarget {
 	return p.seg
 }
 
-func (p *parser) EmitPointer(sym string, width uint) (err ErrorList) {
+func (p *parser) EmitPointer(sym string, unit DataUnit) (err ErrorList) {
 	if sym == "" {
 		return err
 	}
 	et := p.CurrentEmissionTarget()
 	chunk, off := et.Offset()
-	ptr := asmDataPtr{sym: &sym, et: et, chunk: chunk, w: width}
+	ptr := asmDataPtr{sym: &sym, et: et, chunk: chunk, unit: unit}
 	if p.pass2 {
 		ptr.off = off
 	}

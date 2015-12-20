@@ -120,7 +120,7 @@ func (s *SymMap) Set(name string, val asmVal, constant bool) ErrorList {
 				return a.et.Name() == b.et.Name() &&
 					a.chunk == b.chunk &&
 					a.off == b.off &&
-					a.w == b.w
+					a.unit.Width() == b.unit.Width()
 			}
 			return false
 		}
