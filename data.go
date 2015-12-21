@@ -173,3 +173,20 @@ func (p *parser) EmitPointer(sym string, unit DataUnit) (err ErrorList) {
 	}
 	return et.AddPointer(p, sym, ptr)
 }
+
+func (p *parser) EmitData(it *item, unit DataUnit) (err ErrorList) {
+	err = p.EmitPointer(it.sym, unit)
+
+	// In structures, we need to emit data even in pass 1 in order to have
+	// their size at the beginning of pass 2. In segments, we don't; in fact,
+	// doing so effectively emits all data twice, with all pointers pointing to
+	// the second, unnecessary copy.
+	if p.pass2 || p.struc != nil {
+		blob, errData := p.syms.shuntData(it.pos, it.params[0], unit)
+		err = err.AddL(errData)
+		if errData.Severity() < ESError {
+			err = err.AddL(p.CurrentEmissionTarget().AddData(blob))
+		}
+	}
+	return err
+}

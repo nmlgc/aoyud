@@ -922,20 +922,7 @@ func DATA(p *parser, it *item) (err ErrorList) {
 	wordsize := map[string]SimpleData{
 		"DB": 1, "DW": 2, "DD": 4, "DF": 6, "DP": 6, "DQ": 8, "DT": 10,
 	}[it.val]
-	err = err.AddL(p.EmitPointer(it.sym, wordsize))
-
-	// In structures, we need to emit data even in pass 1 in order to have
-	// their size at the beginning of pass 2. In segments, we don't; in fact,
-	// doing so effectively emits all data twice, with all pointers pointing to
-	// the second, unnecessary copy.
-	if p.pass2 || p.struc != nil {
-		blob, errData := p.syms.shuntData(it.pos, it.params[0], wordsize)
-		err = err.AddL(errData)
-		if errData.Severity() < ESError {
-			err = err.AddL(p.CurrentEmissionTarget().AddData(blob))
-		}
-	}
-	return err
+	return p.EmitData(it, wordsize)
 }
 
 func LABEL(p *parser, it *item) ErrorList {
