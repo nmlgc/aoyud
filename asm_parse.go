@@ -936,40 +936,34 @@ func LABEL(p *parser, it *item) ErrorList {
 // eval evaluates the given item, updates the parse state accordingly, and
 // returns whether to keep it in the parser's instruction list.
 func (p *parser) eval(it *item) (keep bool, err ErrorList) {
-	var typ KeywordType = 0
 	k, ok := Keywords[it.val]
-	if ok {
-		typ = k.Type
-	}
-	if !(typ&Conditional != 0 || (p.ifMatch >= p.ifNest)) {
-		return
-	}
-	keep = true
-	if typ&Macro != 0 || p.macro.nest == 0 {
-		if ok {
-			if typ&Data != 0 && p.seg == nil && p.struc == nil {
-				err = ErrorListF(ESError,
-					"code or data emission requires a segment: %s", it,
-				)
-			} else if p.struc != nil && typ&(NoStruct) != 0 {
-				err = ErrorListF(ESError,
-					"%s not allowed inside structure definition", it.val,
-				)
-			} else if k.Func != nil {
-				if err = it.checkSyntaxFor(k); err.Severity() < ESError {
-					err = k.Func(p, it)
-					keep = typ&Evaluated == 0
-				}
-			}
-		} else // Dropping the error on unknown directives/symbols for now
+	if !(k.Type&Conditional != 0 || (p.ifMatch >= p.ifNest)) {
+		return false, err
+	} else if k.Type&Macro == 0 && p.macro.nest != 0 {
+		return true, err
+	} else if !ok {
+		// Dropping the error on unknown directives/symbols for now
 		if insSym, errSym := p.syms.Get(it.val); errSym == nil {
 			switch insSym.(type) {
 			case asmMacro:
-				keep, err = p.expandMacro(insSym.(asmMacro), it)
+				return p.expandMacro(insSym.(asmMacro), it)
 			}
 		}
 	}
-	return keep, err
+	if k.Type&Data != 0 && p.seg == nil && p.struc == nil {
+		return true, ErrorListF(ESError,
+			"code or data emission requires a segment: %s", it,
+		)
+	} else if p.struc != nil && k.Type&(NoStruct) != 0 {
+		return true, ErrorListF(ESError,
+			"%s not allowed inside structure definition", it.val,
+		)
+	} else if k.Func != nil {
+		if err = it.checkSyntaxFor(k); err.Severity() < ESError {
+			return k.Type&Evaluated == 0, err.AddL(k.Func(p, it))
+		}
+	}
+	return true, err
 }
 
 func (p *parser) evalNew(it *item) (err ErrorList) {
