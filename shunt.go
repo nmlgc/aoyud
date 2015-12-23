@@ -310,47 +310,49 @@ type shuntState struct {
 	opSet    *shuntOpMap
 }
 
+func (s *SymMap) shuntNext(state *shuntState, pos ItemPos, stream *lexStream) (err ErrorList) {
+	wordsize := state.retStack.unit.Width()
+	token, err := s.nextShuntToken(stream, state.opSet)
+	if err.Severity() >= ESError {
+		return err
+	}
+	switch token.(type) {
+	case asmInt:
+		// Needs to be here since we also need to take care of predefined
+		// constants like '?'.
+		integer := token.(asmInt)
+		integer.wordsize = uint8(wordsize)
+		state.retStack.push(integer)
+		state.opSet = &binaryOperators
+	case asmString:
+		if wordsize > 1 {
+			var errInt ErrorList
+			token, errInt = token.(asmString).Int(wordsize)
+			err = err.AddL(errInt)
+		}
+		state.retStack.push(token)
+		state.opSet = &binaryOperators
+	case *shuntOp:
+		var errOp ErrorList
+		state.opSet, errOp = state.retStack.pushOp(
+			&state.opStack, token.(*shuntOp),
+		)
+		err.AddL(errOp)
+	case asmExpression:
+		err = err.AddL(s.shuntLoop(state, pos, string(token.(asmExpression))))
+	default:
+		err = err.AddF(ESError,
+			"can't use %s in arithmetic expression", token.Thing(),
+		)
+	}
+	stream.ignore(whitespace)
+	return err
+}
+
 func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err ErrorList) {
 	stream := NewLexStreamAt(pos, expr)
-	wordsize := state.retStack.unit.Width()
 	for stream.peek() != eof && err.Severity() < ESError {
-		token, errToken := s.nextShuntToken(stream, state.opSet)
-		err = err.AddL(errToken)
-		if errToken.Severity() >= ESError {
-			return err
-		}
-		switch token.(type) {
-		case asmInt:
-			// Needs to be here since we also need to take care of predefined
-			// constants like '?'.
-			integer := token.(asmInt)
-			integer.wordsize = uint8(wordsize)
-			state.retStack.push(integer)
-			state.opSet = &binaryOperators
-		case asmString:
-			if wordsize > 1 {
-				var errInt ErrorList
-				token, errInt = token.(asmString).Int(wordsize)
-				err = err.AddL(errInt)
-			}
-			state.retStack.push(token)
-			state.opSet = &binaryOperators
-		case *shuntOp:
-			var errOp ErrorList
-			state.opSet, errOp = state.retStack.pushOp(
-				&state.opStack, token.(*shuntOp),
-			)
-			err.AddL(errOp)
-		case asmExpression:
-			err = err.AddL(
-				s.shuntLoop(state, pos, string(token.(asmExpression))),
-			)
-		default:
-			err = err.AddF(ESError,
-				"can't use %s in arithmetic expression", token.Thing(),
-			)
-		}
-		stream.ignore(whitespace)
+		err = err.AddL(s.shuntNext(state, pos, stream))
 	}
 	return err
 }
