@@ -5,9 +5,11 @@ type charGroup []byte
 var linebreak = charGroup{'\r', '\n'}
 var whitespace = charGroup{' ', '\t'}
 var quotes = charGroup{'\'', '"'}
-var lineDelim = append(charGroup{';'}, linebreak...)
+var lineDelim = charGroup{';'}
 var paramDelim = append(charGroup{','}, lineDelim...)
-var insDelim = append(append(charGroup{':', '='}, whitespace...), paramDelim...)
+var insDelim = append(
+	append(append(charGroup{':', '='}, whitespace...), paramDelim...), linebreak...,
+)
 var shuntDelim = append(charGroup{
 	'+', '-', '*', '/', '|', '(', ')', '[', ']', '<', '>', ':', '&', '"', '\'', ',',
 }, whitespace...)
@@ -142,9 +144,16 @@ func (s *lexStream) nextParam(context KeywordType) string {
 	var quote byte
 	var nest *nestLevel
 
+	breakcond := func() bool {
+		b := s.peek()
+		return !(nest == nil && delim.matches(b)) &&
+			!linebreak.matches(b) &&
+			b != eof
+	}
+
 	s.ignore(whitespace)
 	start := s.c
-	for !(nest == nil && delim.matches(s.peek())) && s.peek() != eof {
+	for breakcond() {
 		b := s.next()
 
 		if nest == nil && b == '\\' {
