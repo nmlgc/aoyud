@@ -42,7 +42,7 @@ func init() {
 	hll := Keyword{nil, NotAllowed, HighLevel, req(1)}
 
 	Keywords = map[string]Keyword{
-		"INCLUDE": {INCLUDE, NotAllowed, Evaluated, req(1)},
+		"INCLUDE": {INCLUDE, NotAllowed, Evaluated | SingleParam, req(1)},
 		"PROC":    {PROC, Mandatory, Code, Range{0, -1}},
 		"ENDP":    {ENDP, Optional, Code, req(0)},
 		".MODEL":  {MODEL, NotAllowed, NoStruct, Range{1, 6}},
