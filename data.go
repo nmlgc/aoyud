@@ -13,14 +13,20 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 )
 
-// DataUnit represents the size of an emittable data type.
+// DataUnit represents an emittable data type.
 type DataUnit interface {
+	Name() string
 	Width() uint
 }
 
 type SimpleData uint
+
+func (d SimpleData) Name() string {
+	return strconv.Itoa(int(d))
+}
 
 func (d SimpleData) Width() uint {
 	return uint(d)
@@ -80,8 +86,8 @@ func (p asmDataPtr) Thing() string {
 
 func (p asmDataPtr) String() string {
 	var offChars int = int(p.et.WordSize() * 2)
-	return fmt.Sprintf("(%d*) %s:%d:%0*xh",
-		p.unit.Width(), p.et.Name(), p.chunk, offChars, p.off,
+	return fmt.Sprintf("(%s*) %s:%d:%0*xh",
+		p.unit.Name(), p.et.Name(), p.chunk, offChars, p.off,
 	)
 }
 
