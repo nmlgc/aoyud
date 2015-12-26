@@ -910,6 +910,7 @@ func ENDS(p *parser, it *item) (err ErrorList) {
 				err = p.syms.Set(p.struc.name, *p.struc, constant)
 			} else {
 				err = p.struc.prev.members.Set(p.struc.name, *p.struc, constant)
+				p.struc.prev.AddData(p.struc)
 			}
 			p.struc = p.struc.prev
 			return err

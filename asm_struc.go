@@ -59,6 +59,10 @@ func (v asmStruc) Width() uint {
 	return uint(len(v.data))
 }
 
+func (v asmStruc) Len() uint {
+	return v.Width()
+}
+
 func (v *asmStruc) AddData(blob Emittable) (err ErrorList) {
 	if v.flag == sUnion && v.Width() > 0 {
 		data := blob.Emit()
@@ -77,11 +81,12 @@ func (v *asmStruc) AddData(blob Emittable) (err ErrorList) {
 			blob = asmString(strings.Repeat("\x00", padlen))
 		}
 	}
-	if v.prev != nil {
-		err = err.AddL(v.prev.AddData(blob))
-	}
 	v.data = v.data.Append(blob)
 	return err
+}
+
+func (v asmStruc) Emit() []byte {
+	return v.data.Emit()
 }
 
 func (v *asmStruc) Offset() (chunk uint, off uint64) {
