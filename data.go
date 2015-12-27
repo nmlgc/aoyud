@@ -71,13 +71,17 @@ func (l BlobList) Emit() (ret []byte) {
 	return ret
 }
 
+type asmPtr struct {
+	sym  *string // necessary for reverse lookup
+	unit DataUnit
+}
+
 // asmDataPtr represents a pointer to data in a specific segment or structure.
 type asmDataPtr struct {
-	sym   *string // necessary for reverse lookup
+	ptr   asmPtr
 	et    EmissionTarget
 	chunk uint
 	off   uint64
-	unit  DataUnit
 }
 
 func (p asmDataPtr) Thing() string {
@@ -87,12 +91,12 @@ func (p asmDataPtr) Thing() string {
 func (p asmDataPtr) String() string {
 	var offChars int = int(p.et.WordSize() * 2)
 	return fmt.Sprintf("(%s*) %s:%d:%0*xh",
-		p.unit.Name(), p.et.Name(), p.chunk, offChars, p.off,
+		p.ptr.unit.Name(), p.et.Name(), p.chunk, offChars, p.off,
 	)
 }
 
 func (p asmDataPtr) Width() uint {
-	return p.unit.Width()
+	return p.ptr.unit.Width()
 }
 
 type asmSegment struct {
@@ -173,7 +177,7 @@ func (p *parser) EmitPointer(sym string, unit DataUnit) (err ErrorList) {
 	}
 	et := p.CurrentEmissionTarget()
 	chunk, off := et.Offset()
-	ptr := asmDataPtr{sym: &sym, et: et, chunk: chunk, unit: unit}
+	ptr := asmDataPtr{ptr: asmPtr{sym: &sym, unit: unit}, et: et, chunk: chunk}
 	if p.pass2 {
 		ptr.off = off
 	}
