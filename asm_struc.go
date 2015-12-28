@@ -52,7 +52,7 @@ func (v asmStruc) String() string {
 	if v.flag == sUnion {
 		typ = "UNION"
 	}
-	return fmt.Sprintf("%s (%d bytes)\n%s", typ, v.Width(), v.members.Dump(1))
+	return fmt.Sprintf("%s (%d bytes)\n%s", typ, v.Width(), v.data.Dump(1))
 }
 
 func (v asmStruc) Width() uint {

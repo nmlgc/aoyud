@@ -14,6 +14,7 @@ package main
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // DataUnit represents an emittable data type.
@@ -42,8 +43,8 @@ type EmissionTarget interface {
 	// AddPointer adds the given pointer to the global symbol table (if the
 	// symbol is supposed to be public) or the type's own one (if it has one).
 	AddPointer(p *parser, sym string, ptr asmDataPtr) (err ErrorList)
-	// AddData appends the given data to the emission target's data block. ptr
-	// can be nil if there is no pointer to be emitted for the data.
+	// AddData appends the given data to the end of the emission target's data
+	// block. ptr can be nil if no pointer is to be emitted for data.
 	AddData(ptr *asmPtr, data Emittable) (err ErrorList)
 	// WordSize returns the maximum number of bytes allowed for addresses.
 	WordSize() uint8
@@ -86,6 +87,67 @@ func (l BlobList) Emit() (ret []byte) {
 		}
 	}
 	return ret
+}
+
+// Dump pretty-prints the offsets, pointer names, and binary data of all blobs
+// in l, indented with the given number of tabs, and also recurses into
+// structure blobs.
+func (l BlobList) Dump(indent int) (ret string) {
+	offsetDigits := 0
+	for listlen := len(l); listlen > 0; listlen /= 16 {
+		offsetDigits++
+	}
+	longestSym := 0
+	for _, blob := range l {
+		for _, ptr := range blob.Ptrs {
+			if ptr.sym != nil && len(*ptr.sym) > longestSym {
+				longestSym = len(*ptr.sym)
+			}
+		}
+	}
+
+	indentStr := strings.Repeat("\t", indent)
+	offsetFmt := "%s• 0%0*xh | "
+	offsetPad := "\n%s   %*s  | "
+	offsetPad = fmt.Sprintf(offsetPad, indentStr, offsetDigits, "")
+	printSym := func(sym *string) string {
+		if sym != nil {
+			return fmt.Sprintf("%*s | ", longestSym, *sym)
+		}
+		return fmt.Sprintf("%*s | ", longestSym, " ")
+	}
+
+	var last *Emittable = nil
+	for b, blob := range l {
+		if blob.Data != last {
+			if b > 0 {
+				ret += "\n"
+			}
+			ret += fmt.Sprintf(offsetFmt, indentStr, offsetDigits, b)
+			if len(blob.Ptrs) > 0 {
+				for i, ptr := range blob.Ptrs {
+					if i > 0 {
+						ret += offsetPad
+					}
+					ret += printSym(ptr.sym)
+				}
+			} else {
+				ret += printSym(nil)
+			}
+			ret += fmt.Sprintf("% x", (*blob.Data).Emit())
+
+			switch (*blob.Data).(type) {
+			case *asmStruc:
+				ret += "\n" + (*blob.Data).(*asmStruc).data.Dump(indent+1)
+			}
+			last = blob.Data
+		}
+	}
+	return ret
+}
+
+func (l BlobList) String() (ret string) {
+	return l.Dump(0)
 }
 
 type asmPtr struct {
