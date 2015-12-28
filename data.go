@@ -42,20 +42,37 @@ type EmissionTarget interface {
 	// AddPointer adds the given pointer to the global symbol table (if the
 	// symbol is supposed to be public) or the type's own one (if it has one).
 	AddPointer(p *parser, sym string, ptr asmDataPtr) (err ErrorList)
-	// AddData appends the given blob to the emission target's data block.
-	AddData(blob Emittable) (err ErrorList)
+	// AddData appends the given data to the emission target's data block. ptr
+	// can be nil if there is no pointer to be emitted for the data.
+	AddData(ptr *asmPtr, data Emittable) (err ErrorList)
 	// WordSize returns the maximum number of bytes allowed for addresses.
 	WordSize() uint8
 }
 
-// BlobList lists all blobs of a single data chunk by storing the same blob
-// pointer for every byte it occupies. This allows easy random access of each
-// byte within a chunk while also simplifying access to neighboring blobs.
-type BlobList []*Emittable
+// Blob couples an Emittable with all the pointers that point to it.
+type Blob struct {
+	Ptrs []asmPtr
+	Data *Emittable
+}
 
-func (l BlobList) Append(blob Emittable) BlobList {
-	for i := uint(0); i < blob.Len(); i++ {
-		l = append(l, &blob)
+// BlobList lists all Blobs of a single data chunk by storing a Blob with the
+// same Data (but not the same Ptrs) for every byte it occupies. This allows
+// easy random access of each byte within a chunk while also simplifying access
+// to neighboring Blobs.
+type BlobList []Blob
+
+func (l BlobList) Append(ptr *asmPtr, data Emittable) BlobList {
+	datalen := data.Len()
+	if datalen > 0 {
+		first := Blob{Data: &data}
+		if ptr != nil {
+			first.Ptrs = append(first.Ptrs, *ptr)
+		}
+		l = append(l, first)
+		remaining := Blob{Data: &data}
+		for i := uint(1); i < datalen; i++ {
+			l = append(l, remaining)
+		}
 	}
 	return l
 }
@@ -63,9 +80,9 @@ func (l BlobList) Append(blob Emittable) BlobList {
 func (l BlobList) Emit() (ret []byte) {
 	var last *Emittable = nil
 	for _, cur := range l {
-		if cur != last {
-			ret = append(ret, (*cur).Emit()...)
-			last = cur
+		if cur.Data != last {
+			ret = append(ret, (*cur.Data).Emit()...)
+			last = cur.Data
 		}
 	}
 	return ret
@@ -135,9 +152,9 @@ func (s asmSegment) width() uint {
 	return uint(ret)
 }
 
-func (s *asmSegment) AddData(blob Emittable) (err ErrorList) {
+func (s *asmSegment) AddData(ptr *asmPtr, data Emittable) (err ErrorList) {
 	maxSize := uint64((1 << (s.wordsize * 8)) - 1)
-	if uint64(blob.Len()+s.width()) > maxSize && !s.overflowed {
+	if uint64(data.Len()+s.width()) > maxSize && !s.overflowed {
 		s.overflowed = true
 		err = err.AddF(ESError,
 			"declaration overflows %d-bit segment: %s", s.wordsize*8, s.Name(),
@@ -147,7 +164,7 @@ func (s *asmSegment) AddData(blob Emittable) (err ErrorList) {
 		s.chunks = make([]BlobList, 1)
 	}
 	chunk := len(s.chunks) - 1
-	s.chunks[chunk] = s.chunks[chunk].Append(blob)
+	s.chunks[chunk] = s.chunks[chunk].Append(ptr, data)
 	return err
 }
 
@@ -195,7 +212,8 @@ func (p *parser) EmitData(it *item, unit DataUnit) (err ErrorList) {
 		blob, errData := p.syms.shuntData(it.pos, it.params[0], unit)
 		err = err.AddL(errData)
 		if errData.Severity() < ESError {
-			err = err.AddL(p.CurrentEmissionTarget().AddData(blob))
+			ptr := &asmPtr{sym: &it.sym, unit: unit}
+			err = err.AddL(p.CurrentEmissionTarget().AddData(ptr, blob))
 		}
 	}
 	return err

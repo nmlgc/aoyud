@@ -909,8 +909,9 @@ func ENDS(p *parser, it *item) (err ErrorList) {
 			if p.struc.prev == nil {
 				err = p.syms.Set(p.struc.name, *p.struc, constant)
 			} else {
+				ptr := &asmPtr{sym: &p.struc.name, unit: p.struc}
 				err = p.struc.prev.members.Set(p.struc.name, *p.struc, constant)
-				p.struc.prev.AddData(p.struc)
+				p.struc.prev.AddData(ptr, p.struc)
 			}
 			p.struc = p.struc.prev
 			return err

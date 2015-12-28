@@ -63,25 +63,30 @@ func (v asmStruc) Len() uint {
 	return v.Width()
 }
 
-func (v *asmStruc) AddData(blob Emittable) (err ErrorList) {
+func (v *asmStruc) AddData(ptr *asmPtr, data Emittable) (err ErrorList) {
 	if v.flag == sUnion && v.Width() > 0 {
-		data := blob.Emit()
-		for i := range data {
-			if data[i] != 0 {
+		bytes := data.Emit()
+		for i := range bytes {
+			if bytes[i] != 0 {
 				err = err.AddF(ESWarning,
 					"ignoring default value for union member beyond the first",
 				)
 				break
 			}
 		}
-		if v.Width() >= blob.Len() {
+		if v.Width() >= data.Len() {
 			return err
 		} else {
-			padlen := int(blob.Len() - v.Width())
-			blob = asmString(strings.Repeat("\x00", padlen))
+			padlen := int(data.Len() - v.Width())
+			data = asmString(strings.Repeat("\x00", padlen))
 		}
+		v.data = v.data.Append(nil, data)
+		if ptr != nil {
+			v.data[0].Ptrs = append(v.data[0].Ptrs, *ptr)
+		}
+	} else {
+		v.data = v.data.Append(ptr, data)
 	}
-	v.data = v.data.Append(blob)
 	return err
 }
 
