@@ -78,6 +78,35 @@ func (l BlobList) Append(ptr *asmPtr, data Emittable) BlobList {
 	return l
 }
 
+// Expand resizes the blob at the given offset to newlen by concatenating null
+// bytes to the existing blob, and adds ptr to the blob at i.
+func (l BlobList) Expand(ptr *asmPtr, offset uint, newlen uint) BlobList {
+	if offset < uint(len(l)) {
+		olddata := *l[offset].Data
+		oldlen := olddata.Len()
+		if newlen > oldlen {
+			padlen := int(newlen - oldlen)
+			paddata := asmString(strings.Repeat("\x00", padlen))
+			newdata := Emittable(ConcatOperator{[2]Emittable{olddata, paddata}})
+			newblob := Blob{Data: &newdata}
+			newstart, newend := offset+oldlen, offset+newlen
+
+			for i := offset; i < newstart; i++ {
+				l[i].Data = &newdata
+			}
+			var newblobs []Blob
+			for i := newstart; i < newend; i++ {
+				newblobs = append(newblobs, newblob)
+			}
+			l = append(l[:newstart], append(newblobs, l[newstart:]...)...)
+		}
+		if ptr != nil {
+			l[offset].Ptrs = append(l[offset].Ptrs, *ptr)
+		}
+	}
+	return l
+}
+
 func (l BlobList) Emit() (ret []byte) {
 	var last *Emittable = nil
 	for _, cur := range l {

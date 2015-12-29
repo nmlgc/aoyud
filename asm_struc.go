@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 )
 
 // strucFlag denotes whether a nesting level is a structure or union.
@@ -74,16 +73,7 @@ func (v *asmStruc) AddData(ptr *asmPtr, data Emittable) (err ErrorList) {
 				break
 			}
 		}
-		if v.Width() >= data.Len() {
-			return err
-		} else {
-			padlen := int(data.Len() - v.Width())
-			data = asmString(strings.Repeat("\x00", padlen))
-		}
-		v.data = v.data.Append(nil, data)
-		if ptr != nil {
-			v.data[0].Ptrs = append(v.data[0].Ptrs, *ptr)
-		}
+		v.data = v.data.Expand(ptr, 0, data.Len())
 	} else {
 		v.data = v.data.Append(ptr, data)
 	}
