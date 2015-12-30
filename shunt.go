@@ -107,40 +107,40 @@ var asmTypes = map[string]asmInt{
 }
 
 var unaryOperators = shuntOpMap{
-	"(":   {opParenL, 14, 0, nil},
-	")":   {opParenR, 14, 0, nil},
-	"+":   {opPlus, 8, 1, func(a *asmInt) {}},
-	"-":   {opMinus, 8, 1, func(a *asmInt) { a.n = -a.n }},
-	"NOT": {opNot, 4, 1, func(a *asmInt) { a.n = ^a.n }},
+	"(":   {opParenL, 1, 0, nil},
+	")":   {opParenR, 1, 0, nil},
+	"+":   {opPlus, 6, 1, func(a *asmInt) {}},
+	"-":   {opMinus, 6, 1, func(a *asmInt) { a.n = -a.n }},
+	"NOT": {opNot, 11, 1, func(a *asmInt) { a.n = ^a.n }},
 }
 
 var binaryOperators = shuntOpMap{
-	",": {opConcat, 15, 2, nil},
-	"(": {opParenL, 14, 0, nil},
-	")": {opParenR, 14, 0, nil},
+	",":   {opConcat, 16, 2, nil},
+	"DUP": {opDup, 15, 2, nil},
+	"(":   {opParenL, 1, 0, nil},
+	")":   {opParenR, 1, 0, nil},
 	"PTR": {opPtr, 11, 2, func(a, b *asmInt) {
 		a.ptr = uint64(a.n)
 		a.n = b.n
 		a.base = b.base
 	}},
-	"*":   {opMul, 7, 2, func(a, b *asmInt) { a.n *= b.n }},
-	"/":   {opDiv, 7, 2, func(a, b *asmInt) { a.n /= b.n }},
-	"MOD": {opMod, 7, 2, func(a, b *asmInt) { a.n %= b.n }},
-	"SHR": {opShR, 7, 2, func(a, b *asmInt) { a.n >>= uint(b.n) }},
-	"SHL": {opShL, 7, 2, func(a, b *asmInt) { a.n <<= uint(b.n) }},
-	"+":   {opPlus, 6, 2, func(a, b *asmInt) { a.n += b.n }},
-	"-":   {opMinus, 6, 2, func(a, b *asmInt) { a.n -= b.n }},
-	"EQ":  {opEq, 5, 2, func(a, b *asmInt) { a.n = b2i(a.n == b.n) }},
-	"NE":  {opNe, 5, 2, func(a, b *asmInt) { a.n = b2i(a.n != b.n) }},
-	"LT":  {opLt, 5, 2, func(a, b *asmInt) { a.n = b2i(a.n < b.n) }},
-	"LE":  {opLe, 5, 2, func(a, b *asmInt) { a.n = b2i(a.n <= b.n) }},
-	"GT":  {opGt, 5, 2, func(a, b *asmInt) { a.n = b2i(a.n > b.n) }},
-	"GE":  {opGe, 5, 2, func(a, b *asmInt) { a.n = b2i(a.n >= b.n) }},
-	"AND": {opAnd, 3, 2, func(a, b *asmInt) { a.n &= b.n }},
-	"OR":  {opOr, 2, 2, func(a, b *asmInt) { a.n |= b.n }},
-	"|":   {opOr, 2, 2, func(a, b *asmInt) { a.n |= b.n }},
-	"XOR": {opXor, 2, 2, func(a, b *asmInt) { a.n ^= b.n }},
-	"DUP": {opDup, 2, 2, nil},
+	"*":   {opMul, 8, 2, func(a, b *asmInt) { a.n *= b.n }},
+	"/":   {opDiv, 8, 2, func(a, b *asmInt) { a.n /= b.n }},
+	"MOD": {opMod, 8, 2, func(a, b *asmInt) { a.n %= b.n }},
+	"SHR": {opShR, 8, 2, func(a, b *asmInt) { a.n >>= uint(b.n) }},
+	"SHL": {opShL, 8, 2, func(a, b *asmInt) { a.n <<= uint(b.n) }},
+	"+":   {opPlus, 9, 2, func(a, b *asmInt) { a.n += b.n }},
+	"-":   {opMinus, 9, 2, func(a, b *asmInt) { a.n -= b.n }},
+	"EQ":  {opEq, 10, 2, func(a, b *asmInt) { a.n = b2i(a.n == b.n) }},
+	"NE":  {opNe, 10, 2, func(a, b *asmInt) { a.n = b2i(a.n != b.n) }},
+	"LT":  {opLt, 10, 2, func(a, b *asmInt) { a.n = b2i(a.n < b.n) }},
+	"LE":  {opLe, 10, 2, func(a, b *asmInt) { a.n = b2i(a.n <= b.n) }},
+	"GT":  {opGt, 10, 2, func(a, b *asmInt) { a.n = b2i(a.n > b.n) }},
+	"GE":  {opGe, 10, 2, func(a, b *asmInt) { a.n = b2i(a.n >= b.n) }},
+	"AND": {opAnd, 12, 2, func(a, b *asmInt) { a.n &= b.n }},
+	"OR":  {opOr, 13, 2, func(a, b *asmInt) { a.n |= b.n }},
+	"|":   {opOr, 13, 2, func(a, b *asmInt) { a.n |= b.n }},
+	"XOR": {opXor, 13, 2, func(a, b *asmInt) { a.n ^= b.n }},
 }
 
 type Emittable interface {
