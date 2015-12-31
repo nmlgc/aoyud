@@ -252,7 +252,7 @@ func (s *SymMap) nextShuntToken(stream *lexStream, opSet *shuntOpMap) (ret Thing
 	if isAsmInt(token) {
 		return newAsmInt(token)
 	} else if quote := token[0]; quotes.matches(quote) && len(token) == 1 {
-		token = stream.nextUntil(charGroup{quote})
+		token = stream.nextString(charGroup{quote})
 		err = stream.nextAssert(quote, token)
 		return asmString(token), err
 	}

@@ -78,17 +78,23 @@ func (s *lexStream) peekUntil(delim charGroup) string {
 	return tmp.nextUntil(delim)
 }
 
-// nextUntil consumes the next word that is delimited by the given character group.
-func (s *lexStream) nextUntil(delim charGroup) string {
-	if s.peek() == eof {
-		return ""
-	}
-	s.ignore(whitespace)
+// nextString consumes the next word that is delimited by the given character
+// group.
+func (s *lexStream) nextString(delim charGroup) string {
 	start := s.c
 	for !delim.matches(s.peek()) && s.peek() != eof {
 		s.next()
 	}
 	return s.input[start:s.c]
+}
+
+// nextUntil returns the next string without leading whitespace.
+func (s *lexStream) nextUntil(delim charGroup) string {
+	if s.peek() == eof {
+		return ""
+	}
+	s.ignore(whitespace)
+	return s.nextString(delim)
 }
 
 // nextToken works like nextUntil, but consumes one additional character if
