@@ -78,6 +78,18 @@ func (l BlobList) Append(ptr *asmPtr, data Emittable) BlobList {
 	return l
 }
 
+// PaddedData either returns a ConcatOperator consisting of data enlarged to
+// newlen using null bytes, or data itself if it's already large enough.
+func PaddedData(data Emittable, newlen uint) Emittable {
+	oldlen := data.Len()
+	if newlen > oldlen {
+		padlen := int(newlen - oldlen)
+		paddata := asmString(strings.Repeat("\x00", padlen))
+		return ConcatOperator{[2]Emittable{data, paddata}}
+	}
+	return data
+}
+
 // Expand resizes the blob at the given offset to newlen by concatenating null
 // bytes to the existing blob, and adds ptr to the blob at i.
 func (l BlobList) Expand(ptr *asmPtr, offset uint, newlen uint) BlobList {
@@ -85,14 +97,12 @@ func (l BlobList) Expand(ptr *asmPtr, offset uint, newlen uint) BlobList {
 		olddata := *l[offset].Data
 		oldlen := olddata.Len()
 		if newlen > oldlen {
-			padlen := int(newlen - oldlen)
-			paddata := asmString(strings.Repeat("\x00", padlen))
-			newdata := Emittable(ConcatOperator{[2]Emittable{olddata, paddata}})
+			newdata := PaddedData(olddata, newlen)
 			newblob := Blob{Data: &newdata}
 			newstart, newend := offset+oldlen, offset+newlen
 
 			for i := offset; i < newstart; i++ {
-				l[i].Data = &newdata
+				l[i].Data = newblob.Data
 			}
 			var newblobs []Blob
 			for i := newstart; i < newend; i++ {
