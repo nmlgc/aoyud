@@ -310,7 +310,7 @@ type shuntState struct {
 	opSet    *shuntOpMap
 }
 
-func (s *SymMap) shuntNext(state *shuntState, pos ItemPos, stream *lexStream) (err ErrorList) {
+func (s *SymMap) shuntNext(state *shuntState, stream *lexStream) (err ErrorList) {
 	wordsize := state.retStack.unit.Width()
 	token, err := s.nextShuntToken(stream, state.opSet)
 	if err.Severity() >= ESError {
@@ -339,7 +339,8 @@ func (s *SymMap) shuntNext(state *shuntState, pos ItemPos, stream *lexStream) (e
 		)
 		err.AddL(errOp)
 	case asmExpression:
-		err = err.AddL(s.shuntLoop(state, pos, string(token.(asmExpression))))
+		stream.input = string(token.(asmExpression)) + stream.input[stream.c:]
+		stream.c = 0
 	default:
 		err = err.AddF(ESError,
 			"can't use %s in arithmetic expression", token.Thing(),
@@ -352,7 +353,7 @@ func (s *SymMap) shuntNext(state *shuntState, pos ItemPos, stream *lexStream) (e
 func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err ErrorList) {
 	stream := NewLexStreamAt(pos, expr)
 	for stream.peek() != eof && err.Severity() < ESError {
-		err = err.AddL(s.shuntNext(state, pos, stream))
+		err = err.AddL(s.shuntNext(state, stream))
 	}
 	return err
 }
