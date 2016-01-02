@@ -311,6 +311,8 @@ type shuntState struct {
 }
 
 func (s *SymMap) shuntNext(state *shuntState, stream *lexStream) (err ErrorList) {
+	defer stream.ignore(whitespace)
+
 	wordsize := state.retStack.unit.Width()
 	token, err := s.nextShuntToken(stream, state.opSet)
 	if err.Severity() >= ESError {
@@ -346,26 +348,18 @@ func (s *SymMap) shuntNext(state *shuntState, stream *lexStream) (err ErrorList)
 			"can't use %s in arithmetic expression", token.Thing(),
 		)
 	}
-	stream.ignore(whitespace)
 	return err
 }
 
-func (s *SymMap) shuntLoop(state *shuntState, pos ItemPos, expr string) (err ErrorList) {
-	stream := NewLexStreamAt(pos, expr)
-	for stream.peek() != eof && err.Severity() < ESError {
-		err = err.AddL(s.shuntNext(state, stream))
-	}
-	return err
-}
-
-// shunt converts the arithmetic expression in expr into an RPN stack with the
-// given word size.
-func (s *SymMap) shunt(pos ItemPos, expr string, unit DataUnit) (stack *shuntStack, err ErrorList) {
-	state := &shuntState{
+func (s *SymMap) shuntLoop(stream *lexStream, unit DataUnit) (stack *shuntStack, err ErrorList) {
+	state := shuntState{
 		opSet:    &unaryOperators,
 		retStack: shuntStack{unit: unit},
 	}
-	if err = s.shuntLoop(state, pos, expr); err.Severity() >= ESError {
+	for stream.peek() != eof && err.Severity() < ESError {
+		err = err.AddL(s.shuntNext(&state, stream))
+	}
+	if err.Severity() >= ESError {
 		return nil, err
 	}
 	for top := state.opStack.peek(); top != nil; top = state.opStack.peek() {
@@ -377,6 +371,13 @@ func (s *SymMap) shunt(pos ItemPos, expr string, unit DataUnit) (stack *shuntSta
 		}
 	}
 	return &state.retStack, err
+}
+
+// shunt converts the arithmetic expression in expr into an RPN stack with the
+// given word size.
+func (s *SymMap) shunt(pos ItemPos, expr string, unit DataUnit) (stack *shuntStack, err ErrorList) {
+	stream := NewLexStreamAt(pos, expr)
+	return s.shuntLoop(stream, unit)
 }
 
 func (s *shuntStack) processCalcOp(op *shuntOp) (ret Calcable, err ErrorList) {
