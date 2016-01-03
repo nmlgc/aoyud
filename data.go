@@ -78,14 +78,14 @@ func (l BlobList) Append(ptr *asmPtr, data Emittable) BlobList {
 	return l
 }
 
-// PaddedData either returns a ConcatOperator consisting of data enlarged to
+// PaddedData either returns a DataArray consisting of data enlarged to
 // newlen using null bytes, or data itself if it's already large enough.
 func PaddedData(data Emittable, newlen uint) Emittable {
 	oldlen := data.Len()
 	if newlen > oldlen {
 		padlen := int(newlen - oldlen)
 		paddata := asmString(strings.Repeat("\x00", padlen))
-		return ConcatOperator{[2]Emittable{data, paddata}}
+		return DataArray{data, paddata}
 	}
 	return data
 }

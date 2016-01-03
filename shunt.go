@@ -38,8 +38,7 @@ const (
 
 	opPtr = "PTR"
 
-	opDup    = "DUP"
-	opConcat = ","
+	opDup = "DUP"
 )
 
 type shuntOp struct {
@@ -115,7 +114,6 @@ var unaryOperators = shuntOpMap{
 }
 
 var binaryOperators = shuntOpMap{
-	",":   {opConcat, 16, 2, nil},
 	"DUP": {opDup, 15, 2, nil},
 	"(":   {opParenL, 1, 0, nil},
 	")":   {opParenR, 1, 0, nil},
@@ -143,7 +141,18 @@ var binaryOperators = shuntOpMap{
 	"XOR": {opXor, 13, 2, func(a, b *asmInt) { a.n ^= b.n }},
 }
 
+type shuntConcatenator struct{}
+
+func (c shuntConcatenator) Thing() string {
+	return "comma"
+}
+
+func (c shuntConcatenator) String() string {
+	return ","
+}
+
 type Emittable interface {
+	fmt.Stringer
 	Emit() []byte
 	Len() uint
 }
@@ -183,21 +192,31 @@ func (dup DUPOperator) Len() uint {
 	return dup.Data.Len() * uint(dup.Count.Calc().n)
 }
 
-type ConcatOperator struct {
-	Data [2]Emittable
+type DataArray []Emittable
+
+func (d DataArray) String() string {
+	ret := "("
+	for i, data := range d {
+		if i != 0 {
+			ret += ", "
+		}
+		ret += data.String()
+	}
+	return ret + ")"
 }
 
-func (cc ConcatOperator) String() string {
-	return fmt.Sprintf("(%s, %s)", cc.Data[0], cc.Data[1])
+func (d DataArray) Emit() (ret []byte) {
+	for _, data := range d {
+		ret = append(ret, data.Emit()...)
+	}
+	return ret
 }
 
-func (cc ConcatOperator) Emit() (ret []byte) {
-	ret = append(ret, cc.Data[0].Emit()...)
-	return append(ret, cc.Data[1].Emit()...)
-}
-
-func (cc ConcatOperator) Len() uint {
-	return cc.Data[0].Len() + cc.Data[1].Len()
+func (d DataArray) Len() (ret uint) {
+	for _, data := range d {
+		ret += data.Len()
+	}
+	return ret
 }
 
 type Calcable interface {
@@ -251,10 +270,14 @@ func (s *SymMap) nextShuntToken(stream *lexStream, opSet *shuntOpMap) (ret Thing
 	token := stream.nextToken(shuntDelim)
 	if isAsmInt(token) {
 		return newAsmInt(token)
-	} else if quote := token[0]; quotes.matches(quote) && len(token) == 1 {
-		token = stream.nextString(charGroup{quote})
-		err = stream.nextAssert(quote, token)
-		return asmString(token), err
+	} else if len(token) == 1 {
+		if quote := token[0]; quotes.matches(quote) {
+			token = stream.nextString(charGroup{quote})
+			err = stream.nextAssert(quote, token)
+			return asmString(token), err
+		} else if token[0] == ',' {
+			return shuntConcatenator{}, err
+		}
 	}
 	tokenUpper := strings.ToUpper(token)
 	if typ, ok := asmTypes[tokenUpper]; ok {
@@ -310,13 +333,13 @@ type shuntState struct {
 	opSet    *shuntOpMap
 }
 
-func (s *SymMap) shuntNext(state *shuntState, stream *lexStream) (err ErrorList) {
+func (s *SymMap) shuntNext(state *shuntState, stream *lexStream) (bool, ErrorList) {
 	defer stream.ignore(whitespace)
 
 	wordsize := state.retStack.unit.Width()
 	token, err := s.nextShuntToken(stream, state.opSet)
 	if err.Severity() >= ESError {
-		return err
+		return false, err
 	}
 	switch token.(type) {
 	case asmInt:
@@ -340,6 +363,8 @@ func (s *SymMap) shuntNext(state *shuntState, stream *lexStream) (err ErrorList)
 			&state.opStack, token.(*shuntOp),
 		)
 		err.AddL(errOp)
+	case shuntConcatenator:
+		return false, err
 	case asmExpression:
 		stream.input = string(token.(asmExpression)) + stream.input[stream.c:]
 		stream.c = 0
@@ -348,7 +373,7 @@ func (s *SymMap) shuntNext(state *shuntState, stream *lexStream) (err ErrorList)
 			"can't use %s in arithmetic expression", token.Thing(),
 		)
 	}
-	return err
+	return true, err
 }
 
 func (s *SymMap) shuntLoop(stream *lexStream, unit DataUnit) (stack *shuntStack, err ErrorList) {
@@ -356,8 +381,11 @@ func (s *SymMap) shuntLoop(stream *lexStream, unit DataUnit) (stack *shuntStack,
 		opSet:    &unaryOperators,
 		retStack: shuntStack{unit: unit},
 	}
-	for stream.peek() != eof && err.Severity() < ESError {
-		err = err.AddL(s.shuntNext(&state, stream))
+	moreTokens := true
+	for stream.peek() != eof && moreTokens && err.Severity() < ESError {
+		var errShunt ErrorList
+		moreTokens, errShunt = s.shuntNext(&state, stream)
+		err = err.AddL(errShunt)
 	}
 	if err.Severity() >= ESError {
 		return nil, err
@@ -373,11 +401,18 @@ func (s *SymMap) shuntLoop(stream *lexStream, unit DataUnit) (stack *shuntStack,
 	return &state.retStack, err
 }
 
-// shunt converts the arithmetic expression in expr into an RPN stack with the
+// shunt parses the arithmetic expressions in expr into RPN stacks with the
 // given word size.
-func (s *SymMap) shunt(pos ItemPos, expr string, unit DataUnit) (stack *shuntStack, err ErrorList) {
+func (s *SymMap) shunt(pos ItemPos, expr string, unit DataUnit) (stacks []shuntStack, err ErrorList) {
 	stream := NewLexStreamAt(pos, expr)
-	return s.shuntLoop(stream, unit)
+	for stream.peek() != eof && err.Severity() < ESError {
+		stack, errShunt := s.shuntLoop(stream, unit)
+		err = err.AddL(errShunt)
+		if stack != nil {
+			stacks = append(stacks, *stack)
+		}
+	}
+	return stacks, err
 }
 
 func (s *shuntStack) processCalcOp(op *shuntOp) (ret Calcable, err ErrorList) {
@@ -443,12 +478,6 @@ func (s *shuntStack) ToEmitTree() (Emittable, ErrorList) {
 			err = err.AddL(errData)
 			err = err.AddL(errCount)
 			return DUPOperator{count, data}, err
-		case opConcat:
-			data1, err1 := s.ToEmitTree()
-			data0, err0 := s.ToEmitTree()
-			err = err.AddL(err1)
-			err = err.AddL(err0)
-			return ConcatOperator{[2]Emittable{data0, data1}}, err
 		}
 		cOp, errCOp := s.processCalcOp(root.(*shuntOp))
 		return CalcToEmitOperator{cOp}, err.AddL(errCOp)
@@ -483,9 +512,9 @@ func (s shuntStack) solveInt() (*asmInt, ErrorList) {
 
 // evalInt wraps shunt and solveInt.
 func (s *SymMap) evalInt(pos ItemPos, expr string) (*asmInt, ErrorList) {
-	rpnStack, err := s.shunt(pos, expr, SimpleData(maxbytes))
-	if err.Severity() < ESError {
-		ret, errSolve := rpnStack.solveInt()
+	stacks, err := s.shunt(pos, expr, SimpleData(maxbytes))
+	if err.Severity() < ESError && len(stacks) > 0 {
+		ret, errSolve := stacks[0].solveInt()
 		return ret, err.AddL(errSolve)
 	}
 	return nil, err
@@ -503,10 +532,16 @@ func (s *SymMap) evalBool(pos ItemPos, expr string) (bool, ErrorList) {
 
 // shuntData wraps shunt and ToEmitTree.
 func (s *SymMap) shuntData(pos ItemPos, expr string, unit DataUnit) (Emittable, ErrorList) {
-	rpnStack, err := s.shunt(pos, expr, unit)
+	var array DataArray
+	stacks, err := s.shunt(pos, expr, unit)
 	if err.Severity() < ESError {
-		tree, errTree := rpnStack.ToEmitTree()
-		return tree, err.AddL(errTree)
+		for i := 0; i < len(stacks) && err.Severity() < ESError; i++ {
+			tree, errTree := stacks[i].ToEmitTree()
+			err = err.AddL(errTree)
+			if tree != nil {
+				array = append(array, tree)
+			}
+		}
 	}
-	return nil, err
+	return array, err
 }
