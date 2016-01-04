@@ -310,7 +310,7 @@ func (p *parser) EmitData(it *item, unit DataUnit) (err ErrorList) {
 	// doing so effectively emits all data twice, with all pointers pointing to
 	// the second, unnecessary copy.
 	if p.pass2 || p.struc != nil {
-		blob, errData := p.syms.shuntData(it.pos, it.params[0], unit)
+		blob, errData := p.syms.evalData(it.pos, it.params[0], unit)
 		err = err.AddL(errData)
 		if errData.Severity() < ESError {
 			ptr := &asmPtr{sym: &it.sym, unit: unit}

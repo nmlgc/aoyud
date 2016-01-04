@@ -376,7 +376,7 @@ func (s *SymMap) shuntNext(state *shuntState, stream *lexStream) (bool, ErrorLis
 	return true, err
 }
 
-func (s *SymMap) shuntLoop(stream *lexStream, unit DataUnit) (stack *shuntStack, err ErrorList) {
+func (s *SymMap) shunt(stream *lexStream, unit DataUnit) (stack *shuntStack, err ErrorList) {
 	state := shuntState{
 		opSet:    &unaryOperators,
 		retStack: shuntStack{unit: unit},
@@ -401,18 +401,14 @@ func (s *SymMap) shuntLoop(stream *lexStream, unit DataUnit) (stack *shuntStack,
 	return &state.retStack, err
 }
 
-// shunt parses the arithmetic expressions in expr into RPN stacks with the
-// given word size.
-func (s *SymMap) shunt(pos ItemPos, expr string, unit DataUnit) (stacks []shuntStack, err ErrorList) {
-	stream := NewLexStreamAt(pos, expr)
-	for stream.peek() != eof && err.Severity() < ESError {
-		stack, errShunt := s.shuntLoop(stream, unit)
-		err = err.AddL(errShunt)
-		if stack != nil {
-			stacks = append(stacks, *stack)
-		}
+// shuntData wraps shunt and ToEmitTree.
+func (s *SymMap) shuntData(stream *lexStream, unit DataUnit) (Emittable, ErrorList) {
+	stack, err := s.shunt(stream, unit)
+	if err.Severity() < ESError {
+		tree, errTree := stack.ToEmitTree()
+		return tree, err.AddL(errTree)
 	}
-	return stacks, err
+	return nil, err
 }
 
 func (s *shuntStack) processCalcOp(op *shuntOp) (ret Calcable, err ErrorList) {
@@ -512,9 +508,10 @@ func (s shuntStack) solveInt() (*asmInt, ErrorList) {
 
 // evalInt wraps shunt and solveInt.
 func (s *SymMap) evalInt(pos ItemPos, expr string) (*asmInt, ErrorList) {
-	stacks, err := s.shunt(pos, expr, SimpleData(maxbytes))
-	if err.Severity() < ESError && len(stacks) > 0 {
-		ret, errSolve := stacks[0].solveInt()
+	stream := NewLexStreamAt(pos, expr)
+	stack, err := s.shunt(stream, SimpleData(maxbytes))
+	if err.Severity() < ESError {
+		ret, errSolve := stack.solveInt()
 		return ret, err.AddL(errSolve)
 	}
 	return nil, err
@@ -530,18 +527,15 @@ func (s *SymMap) evalBool(pos ItemPos, expr string) (bool, ErrorList) {
 	return false, err
 }
 
-// shuntData wraps shunt and ToEmitTree.
-func (s *SymMap) shuntData(pos ItemPos, expr string, unit DataUnit) (Emittable, ErrorList) {
-	var array DataArray
-	stacks, err := s.shunt(pos, expr, unit)
-	if err.Severity() < ESError {
-		for i := 0; i < len(stacks) && err.Severity() < ESError; i++ {
-			tree, errTree := stacks[i].ToEmitTree()
-			err = err.AddL(errTree)
-			if tree != nil {
-				array = append(array, tree)
-			}
+// evalData calls shuntData for all comma-separated elements in expr.
+func (s *SymMap) evalData(pos ItemPos, expr string, unit DataUnit) (ret DataArray, err ErrorList) {
+	stream := NewLexStreamAt(pos, expr)
+	for stream.peek() != eof && err.Severity() < ESError {
+		data, errData := s.shuntData(stream, unit)
+		err = err.AddL(errData)
+		if data != nil {
+			ret = append(ret, data)
 		}
 	}
-	return array, err
+	return ret, err
 }
