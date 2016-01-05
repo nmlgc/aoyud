@@ -302,13 +302,14 @@ func (s *SymMap) nextShuntToken(stream *lexStream, opSet *shuntOpMap) (ret Thing
 func (retStack *shuntStack) pushOp(opStack *shuntStack, newOp *shuntOp) (*shuntOpMap, ErrorList) {
 	switch newOp.id {
 	case opParenR:
-		top, err := opStack.pop()
+		var err ErrorList
+		top, _ := opStack.pop()
 		for top != nil && top.(*shuntOp).id != opParenL {
 			retStack.push(top)
-			top, err = opStack.pop()
+			top, _ = opStack.pop()
 		}
 		if top == nil {
-			err = err.AddF(ESError, "mismatched parentheses")
+			err = ErrorListF(ESError, "mismatched parentheses")
 		}
 		return &binaryOperators, err
 	case opParenL:
@@ -358,11 +359,10 @@ func (s *SymMap) shuntNext(state *shuntState, stream *lexStream) (bool, ErrorLis
 		state.retStack.push(token)
 		state.opSet = &binaryOperators
 	case *shuntOp:
+		op := token.(*shuntOp)
 		var errOp ErrorList
-		state.opSet, errOp = state.retStack.pushOp(
-			&state.opStack, token.(*shuntOp),
-		)
-		err.AddL(errOp)
+		state.opSet, errOp = state.retStack.pushOp(&state.opStack, op)
+		err = err.AddL(errOp)
 	case shuntConcatenator:
 		return false, err
 	case asmExpression:
