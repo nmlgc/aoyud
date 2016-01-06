@@ -133,10 +133,6 @@ func (s *lexStream) nextParam(context KeywordType) string {
 		'"':  '"',
 		'\'': '\'',
 	}
-	// HLL directives use < and > as comparison operators.
-	if (context & HighLevel) != 0 {
-		delete(nestChars, '<')
-	}
 	delim := paramDelim
 	if (context & SingleParam) != 0 {
 		delim = lineDelim
