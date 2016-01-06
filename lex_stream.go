@@ -120,10 +120,9 @@ func (s *lexStream) nextSegmentParam() (ret string, err ErrorList) {
 	return ret, err
 }
 
-// nextParam consumes and returns the next parameter to an instruction, taking
-// the nesting rules for the given context into account.
-func (s *lexStream) nextParam(context KeywordType) string {
-
+// nextNestedString consumes the next word that is delimited by the given
+// character group while taking nesting rules into account.
+func (s *lexStream) nextNestedString(delim charGroup) string {
 	// nestChars maps the start delimiter of the various nesting levels used
 	// in MASM's syntax to their respective end delimiters.
 	var nestChars = map[byte]byte{
@@ -132,10 +131,6 @@ func (s *lexStream) nextParam(context KeywordType) string {
 		'<':  '>',
 		'"':  '"',
 		'\'': '\'',
-	}
-	delim := paramDelim
-	if (context & SingleParam) != 0 {
-		delim = lineDelim
 	}
 
 	type nestLevel struct {
@@ -180,6 +175,16 @@ func (s *lexStream) nextParam(context KeywordType) string {
 		s.c--
 	}
 	return s.input[start:s.c]
+}
+
+// nextParam consumes and returns the next parameter to an instruction, taking
+// the nesting rules for the given context into account.
+func (s *lexStream) nextParam(context KeywordType) string {
+	delim := paramDelim
+	if (context & SingleParam) != 0 {
+		delim = lineDelim
+	}
+	return s.nextNestedString(delim)
 }
 
 // NewLexStream creates a new lex stream at the start of the given file.
