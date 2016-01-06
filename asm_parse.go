@@ -949,6 +949,12 @@ func (p *parser) eval(it *item) (keep bool, err ErrorList) {
 			switch insSym.(type) {
 			case asmMacro:
 				return p.expandMacro(insSym.(asmMacro), it)
+			case asmStruc:
+				struc := insSym.(asmStruc)
+				fn := func(p *parser, it *item) ErrorList {
+					return p.EmitData(it, &struc)
+				}
+				k = Keyword{fn, Optional, Data | SingleParam, Range{1, 1}}
 			}
 		}
 	}

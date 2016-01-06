@@ -175,6 +175,7 @@ func (p *parser) lexItem(stream *lexStream) (ret *item, err ErrorList) {
 		err = err.AddLAt(pos, errLookup)
 		switch val.(type) {
 		case asmStruc:
+			context |= SingleParam
 			secondRule = Optional
 		}
 	}

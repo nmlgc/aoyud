@@ -90,6 +90,34 @@ func PaddedData(data Emittable, newlen uint) Emittable {
 	return data
 }
 
+// Set overwrites the data of the blob at the given offset, and all identical
+// prior or following blob pointers, with the given one. The third return
+// value is the offset of the first element in the blob list that matches the
+// data at the given offset.
+func (l BlobList) Set(offset uint, data Emittable) (BlobList, ErrorList, uint) {
+	if offset >= uint(len(l)) {
+		return nil, ErrorListF(ESError, "value outside data block: %s", data), 0
+	}
+	target := l[offset].Data
+	for i := offset - 1; i < offset; i-- {
+		if l[i].Data != target {
+			break
+		}
+		offset = i
+	}
+	first := l[offset]
+	datalen := data.Len()
+	targetlen := (*first.Data).Len()
+	if datalen > targetlen {
+		return l, ErrorListF(ESError, "value too large: %s", data), 0
+	}
+	newdata := PaddedData(data, targetlen)
+	for i := uint(0); i < targetlen; i++ {
+		l[offset+i].Data = &newdata
+	}
+	return l, nil, offset
+}
+
 // Expand resizes the blob at the given offset to newlen by concatenating null
 // bytes to the existing blob, and adds ptr to the blob at i.
 func (l BlobList) Expand(ptr *asmPtr, offset uint, newlen uint) BlobList {
