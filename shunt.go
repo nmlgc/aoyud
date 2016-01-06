@@ -194,6 +194,10 @@ func (dup DUPOperator) Len() uint {
 
 type DataArray []Emittable
 
+func (d DataArray) Thing() string {
+	return "data array"
+}
+
 func (d DataArray) String() string {
 	ret := "("
 	for i, data := range d {
@@ -283,14 +287,6 @@ func (s *SymMap) nextShuntToken(stream *lexStream, opSet *shuntOpMap) (ret Thing
 	if typ, ok := asmTypes[tokenUpper]; ok {
 		return typ, err
 	} else if nextOp, ok := (*opSet)[tokenUpper]; ok {
-		if nextOp.id == opDup {
-			stream.ignore(whitespace)
-			if stream.peek() != '(' {
-				err = err.AddF(ESWarning,
-					"data argument to DUP must be enclosed in parentheses",
-				)
-			}
-		}
 		return &nextOp, err
 	}
 	return s.Get(token)
@@ -359,10 +355,34 @@ func (s *SymMap) shuntNext(state *shuntState, stream *lexStream) (bool, ErrorLis
 		state.retStack.push(token)
 		state.opSet = &binaryOperators
 	case *shuntOp:
-		op := token.(*shuntOp)
 		var errOp ErrorList
+		op := token.(*shuntOp)
 		state.opSet, errOp = state.retStack.pushOp(&state.opStack, op)
 		err = err.AddL(errOp)
+
+		if op.id == opDup {
+			arg := stream.nextNestedString(dupDelim)
+			if len(arg) == 0 {
+				return false, err.AddF(ESError, "missing data argument for DUP")
+			} else if arg[0] != '(' || arg[len(arg)-1] != ')' {
+				return false, err.AddF(ESError,
+					"data argument to DUP must be enclosed in parentheses: %s",
+					arg,
+				)
+			}
+			var data Emittable
+			var errData ErrorList
+			var array DataArray
+			dupStream := NewLexStreamAt(stream.pos, arg[1:len(arg)-1])
+			for dupStream.peek() != eof && errData.Severity() < ESError {
+				data, errData = s.shuntData(dupStream, state.retStack.unit)
+				err = err.AddL(errData)
+				if data != nil && errData.Severity() < ESError {
+					array = append(array, data)
+				}
+			}
+			state.retStack.push(array)
+		}
 	case shuntConcatenator:
 		return false, err
 	case asmExpression:
@@ -481,6 +501,8 @@ func (s *shuntStack) ToEmitTree() (Emittable, ErrorList) {
 		return root.(asmInt), err.AddL(s.fitsInStack(root.(asmInt)))
 	case asmString:
 		return root.(asmString), err
+	case DataArray:
+		return root.(DataArray), err
 	}
 	return nil, err.AddF(ESError,
 		"can't use %s in data expression", root.Thing(),

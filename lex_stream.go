@@ -7,6 +7,7 @@ var whitespace = charGroup{' ', '\t'}
 var quotes = charGroup{'\'', '"'}
 var lineDelim = charGroup{';'}
 var paramDelim = append(charGroup{','}, lineDelim...)
+var dupDelim = append(append(charGroup{}, paramDelim...), whitespace...)
 var insDelim = append(
 	append(append(charGroup{':', '='}, whitespace...), paramDelim...), linebreak...,
 )
