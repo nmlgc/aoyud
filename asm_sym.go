@@ -95,6 +95,23 @@ func (s *SymMap) Get(name string) (asmVal, ErrorList) {
 	return nil, ErrorListF(ESError, "unknown symbol: %s", name)
 }
 
+// GetSegment returns a pointer to the segment with the given name, or tries
+// to create the segment if it doesn't exist yet.
+func (s *SymMap) GetSegment(name string) (*asmSegment, ErrorList) {
+	val, err := s.Lookup(name)
+	if val != nil {
+		switch val.(type) {
+		case *asmSegment:
+			return val.(*asmSegment), err
+		default:
+			// We'll have SymMap.Set handle this error message.
+		}
+	}
+	cpuWordSize := uint8(s.Map["@WORDSIZE"].Val.(asmInt).n) // should never fail
+	seg := &asmSegment{name: name, wordsize: cpuWordSize}
+	return seg, err.AddL(s.Set(name, seg, false))
+}
+
 // Set tries to add a new symbol with the given name and value to s, while
 // taking the constness of a possible existing value with the same name into
 // account. If name is empty, the function does nothing.

@@ -844,25 +844,15 @@ func CPU(p *parser, it *item) ErrorList {
 
 func SEGMENT(p *parser, it *item) ErrorList {
 	cpuWordSize := uint8(p.syms.Map["@WORDSIZE"].Val.(asmInt).n) // can never fail
-	seg := &asmSegment{}
-	var old asmVal
-	var errList ErrorList
+	wordsize := uint8(0)
 	var attributes = map[string]func(){
-		"USE16": func() { seg.wordsize = 2 },
-		"USE32": func() { seg.wordsize = 4 },
-		"USE64": func() { seg.wordsize = 8 },
+		"USE16": func() { wordsize = 2 },
+		"USE32": func() { wordsize = 4 },
+		"USE64": func() { wordsize = 8 },
 	}
-	if old, errList = p.syms.Lookup(it.sym); old != nil {
-		switch old.(type) {
-		case *asmSegment:
-			seg = old.(*asmSegment)
-		default:
-			// SymMap.Set handles this error message. Just continuing to
-			// create the segment as normal certainly leads to fewer errors.
-		}
-	} else {
-		seg.wordsize = cpuWordSize
-		seg.name = it.sym
+	seg, errList := p.syms.GetSegment(it.sym)
+	if errList.Severity() >= ESError {
+		return errList
 	}
 	if len(it.params) > 0 {
 		for stream := NewLexStreamAt(it.pos, it.params[0]); stream.peek() != eof; {
@@ -873,9 +863,9 @@ func SEGMENT(p *parser, it *item) ErrorList {
 			}
 		}
 	}
-	if seg.wordsize > cpuWordSize {
+	if wordsize > cpuWordSize {
 		var str string
-		switch seg.wordsize {
+		switch wordsize {
 		case 4:
 			str = "32-bit segments require at least a .386 CPU setting"
 		case 8:
@@ -883,10 +873,13 @@ func SEGMENT(p *parser, it *item) ErrorList {
 		}
 		return errList.AddF(ESError, str)
 	}
+	if wordsize != 0 {
+		seg.wordsize = wordsize
+	}
 	seg.prev = p.seg
 	p.seg = seg
 	p.segNest++
-	return errList.AddL(p.syms.Set(it.sym, seg, false))
+	return errList
 }
 
 func ENDS(p *parser, it *item) (err ErrorList) {
