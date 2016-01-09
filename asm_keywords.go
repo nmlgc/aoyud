@@ -115,7 +115,7 @@ func init() {
 		// Segments
 		"SEGMENT": {SEGMENT, Mandatory, NoStruct, Range{0, 1}},
 		"ENDS":    {ENDS, Optional, 0, req(0)},
-		"GROUP":   {nil, Mandatory, 0, req(1)}, // TODO
+		"GROUP":   {GROUP, Mandatory, 0, Range{1, -1}},
 		// Data allocations
 		"DB": data,
 		"DW": data,

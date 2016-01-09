@@ -913,6 +913,21 @@ func ENDS(p *parser, it *item) (err ErrorList) {
 	return ErrorListF(ESError, "unmatched ENDS: %s", it.sym)
 }
 
+func GROUP(p *parser, it *item) (err ErrorList) {
+	group, err := p.syms.GetGroup(it.sym)
+	if err.Severity() >= ESError {
+		return err
+	}
+	for _, seg := range it.params {
+		seg, errSeg := p.syms.GetSegment(seg)
+		err = err.AddL(errSeg)
+		if errSeg.Severity() < ESError {
+			err = err.AddL(group.Add(seg))
+		}
+	}
+	return err
+}
+
 func DATA(p *parser, it *item) (err ErrorList) {
 	wordsize := map[string]SimpleData{
 		"DB": 1, "DW": 2, "DD": 4, "DF": 6, "DP": 6, "DQ": 8, "DT": 10,

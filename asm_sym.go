@@ -112,6 +112,22 @@ func (s *SymMap) GetSegment(name string) (*asmSegment, ErrorList) {
 	return seg, err.AddL(s.Set(name, seg, false))
 }
 
+// GetGroup returns a pointer to the group with the given name, or tries to
+// create the group if it doesn't exist yet.
+func (s *SymMap) GetGroup(name string) (*asmGroup, ErrorList) {
+	val, err := s.Lookup(name)
+	if val != nil {
+		switch val.(type) {
+		case *asmGroup:
+			return val.(*asmGroup), err
+		default:
+			// We'll have SymMap.Set handle this error message.
+		}
+	}
+	group := &asmGroup{name: name}
+	return group, err.AddL(s.Set(name, group, false))
+}
+
 // Set tries to add a new symbol with the given name and value to s, while
 // taking the constness of a possible existing value with the same name into
 // account. If name is empty, the function does nothing.

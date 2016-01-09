@@ -245,10 +245,44 @@ func (p asmDataPtr) Width() uint {
 	return p.ptr.unit.Width()
 }
 
+type asmGroup struct {
+	name string
+	segs []*asmSegment
+}
+
+func (g asmGroup) Thing() string {
+	return "group"
+}
+
+func (g asmGroup) String() string {
+	ret := "GROUP ["
+	for i, seg := range g.segs {
+		if i > 0 {
+			ret += ", "
+		}
+		ret += (*seg).Name()
+	}
+	return ret + "]"
+}
+
+func (g *asmGroup) Add(seg *asmSegment) (err ErrorList) {
+	if seg.group != nil && seg.group != g {
+		return err.AddF(ESError,
+			"segment already part of group %s: %s", seg.group.name, seg.Name(),
+		)
+	}
+	if seg.group == nil {
+		seg.group = g
+		g.segs = append(g.segs, seg)
+	}
+	return err
+}
+
 type asmSegment struct {
 	name       string
 	chunks     []BlobList  // List of all contiguous data blocks
 	prev       *asmSegment // in order to easily handle nested segments
+	group      *asmGroup
 	overflowed bool
 	wordsize   uint8
 }
