@@ -109,6 +109,12 @@ func (s *SymMap) GetSegment(name string) (*asmSegment, ErrorList) {
 	}
 	cpuWordSize := uint8(s.Map["@WORDSIZE"].Val.(asmInt).n) // should never fail
 	seg := &asmSegment{name: name, wordsize: cpuWordSize}
+
+	// @32BIT is only set in TASM mode, which can't be used to compile 64-bit
+	// code anyway, so I guess this is fine?
+	if thirtytwo, ok := s.Map["@32BIT"]; ok {
+		seg.wordsize = uint8(2 + (thirtytwo.Val.(asmInt).n * 2))
+	}
 	return seg, err.AddL(s.Set(name, seg, false))
 }
 

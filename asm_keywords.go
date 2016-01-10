@@ -44,7 +44,7 @@ func init() {
 		"INCLUDE": {INCLUDE, NotAllowed, Evaluated | SingleParam, req(1)},
 		"PROC":    {PROC, Mandatory, Code, Range{0, -1}},
 		"ENDP":    {ENDP, Optional, Code, req(0)},
-		".MODEL":  {MODEL, NotAllowed, NoStruct, Range{1, 6}},
+		".MODEL":  {MODEL, NotAllowed, NoStruct, Range{1, 4}},
 		// Equates
 		"=":       {EQUALS, Mandatory, 0, req(1)},
 		"EQU":     {EQU, Mandatory, 0, Range{1, -1}},
