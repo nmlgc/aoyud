@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode"
@@ -1183,6 +1184,16 @@ func Parse(filename string, syntax string, includePaths []string) (*parser, Erro
 	syms := *NewSymMap(&p.caseSensitive)
 	p.syms = syms
 	p.setCPU("8086")
+
+	filenamesym := filepath.Base(filename)
+	if i := strings.IndexByte(filenamesym, '.'); i != -1 {
+		filenamesym = filenamesym[:i]
+	}
+	// TODO: Use the correct case (@FileName and ??filename)
+	p.syms.Set("@FILENAME", asmExpression(strings.ToUpper(filenamesym)), true)
+
+	filename8 := fmt.Sprintf("%-8s", filenamesym)[:8]
+	p.syms.Set("??FILENAME", asmString(filename8), true)
 
 	err := p.StepIntoFile(filename, includePaths)
 	if err.Severity() >= ESFatal {
