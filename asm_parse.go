@@ -386,7 +386,9 @@ type parser struct {
 	syntax          string
 	syms            SymMap
 	caseSensitive   bool
-	macroLocalCount int // Number of LOCAL directives expanded
+	macroLocalCount int    // Number of LOCAL directives expanded
+	segCodeName     string // Name of the segment entered with .CODE
+	segDataName     string // Name of the segment entered with .DATA
 	// Open blocks
 	proc    NestInfo
 	macro   NestInfo
@@ -473,6 +475,7 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 	codesegname := ""
 	datasegname := ""
 	cpu := p.syms.Map["@CPU"].Val.(asmInt).n
+	filename := string(p.syms.Map["@FILENAME"].Val.(asmExpression))
 
 	parseStack := func(far bool) (err ErrorList) {
 		if flat && showNearstackWarning && (!far || !farstack) {
@@ -602,6 +605,16 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 		return err
 	}
 
+	getSegName := func(curname, suffix string, filenamecond bool) string {
+		if curname == "" {
+			if filenamecond {
+				curname += filename
+			}
+			curname += suffix
+		}
+		return curname
+	}
+
 	if p.syntax == "TASM" {
 		// Optional model modifier
 		modelStream := NewLexStreamAt(it.pos, it.params[0])
@@ -700,6 +713,21 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 		err = err.AddL(p.syms.Set("@STACK", asmExpression("DGROUP"), false))
 	}
 
+	// Initialize default segments.
+	p.segCodeName = getSegName(codesegname, "_TEXT", model.codesize >= 1)
+	p.segDataName = getSegName(datasegname, "_DATA", modelstr == "TCHUGE")
+	codeseg, errCS := p.syms.GetSegment(p.segCodeName)
+	dataseg, errDS := p.syms.GetSegment(p.segDataName)
+	err = err.AddL(errCS)
+	err = err.AddL(errDS)
+	if !flat {
+		dgroup, errDGroup := p.syms.GetGroup("DGROUP")
+		err = err.AddL(errDGroup)
+		err = err.AddL(dgroup.Add(dataseg))
+		if modelstr == "TINY" {
+			err = err.AddL(dgroup.Add(codeseg))
+		}
+	}
 	return err
 }
 
