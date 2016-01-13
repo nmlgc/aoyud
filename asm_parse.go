@@ -385,6 +385,7 @@ type parser struct {
 	file            *parseFile
 	syntax          string
 	syms            SymMap
+	intSyms         InternalSyms
 	caseSensitive   bool
 	macroLocalCount int    // Number of LOCAL directives expanded
 	segCodeName     string // Name of the segment entered with .CODE
@@ -455,7 +456,7 @@ func ENDP(p *parser, it *item) (err ErrorList) {
 
 func MODEL(p *parser, it *item) (err ErrorList) {
 	type modelVals struct {
-		model, codesize, datasize int64
+		model, codesize, datasize uint8
 	}
 	type modifierMap map[string]func() ErrorList
 	type modifiers struct {
@@ -470,12 +471,10 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 	farstack := false
 	showNearstackWarning := false
 	flat := false
-	thirtytwo := int64(0)
-	language := int64(0)
+	thirtytwo := uint8(0)
+	language := uint8(0)
 	codesegname := ""
 	datasegname := ""
-	cpu := p.syms.Map["@CPU"].Val.(asmInt).n
-	filename := string(p.syms.Map["@FILENAME"].Val.(asmExpression))
 
 	parseStack := func(far bool) (err ErrorList) {
 		if flat && showNearstackWarning && (!far || !farstack) {
@@ -509,7 +508,7 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 			// Yes, the TASM manual actually got @Model wrong.
 			model = modelVals{1, 0, 0}
 			flat = true
-			if cpu&cpu386 == 0 {
+			if p.intSyms.CPU&cpu386 == 0 {
 				return err.AddF(ESError, "FLAT model requires at least a .386 CPU")
 			} else if p.syntax == "MASM" {
 				model.model = 7
@@ -548,7 +547,7 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 		"OS_NT":     func() ErrorList { return nil },
 		"USE16":     func() ErrorList { thirtytwo = 0; return nil },
 		"USE32": func() ErrorList {
-			if cpu&cpu386 == 0 {
+			if p.intSyms.CPU&cpu386 == 0 {
 				return ErrorListF(ESError,
 					"32-bit segments require at least a .386 CPU setting: USE32",
 				)
@@ -596,9 +595,9 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 		modelstr = strings.ToUpper(modelstr)
 		if mod, ok := modelValMap[modelstr]; ok {
 			err = err.AddL(mod())
-			err = err.AddL(p.syms.Set("@MODEL", asmInt{n: model.model}, false))
-			err = err.AddL(p.syms.Set("@CODESIZE", asmInt{n: model.codesize}, false))
-			err = err.AddL(p.syms.Set("@DATASIZE", asmInt{n: model.datasize}, false))
+			p.intSyms.Model = &model.model
+			p.intSyms.CodeSize = &model.codesize
+			p.intSyms.DataSize = &model.datasize
 		} else {
 			err = err.AddF(ESError, "invalid memory model: %s", modelstr)
 		}
@@ -608,7 +607,7 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 	getSegName := func(curname, suffix string, filenamecond bool) string {
 		if curname == "" {
 			if filenamecond {
-				curname += filename
+				curname += string(p.intSyms.FileName)
 			}
 			curname += suffix
 		}
@@ -682,7 +681,7 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 			tasmParseModifier(param, tasmModelModifiers)
 		}
 
-		err = err.AddL(p.syms.Set("@32BIT", asmInt{n: thirtytwo}, false))
+		p.intSyms.ThirtyTwo = &thirtytwo
 
 		// TASM's syntax accepts 3 comma-separated parameters as opposed to
 		// MASM's maximum of 4, so we explicitly check the range again.
@@ -703,15 +702,17 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 			}
 		}
 	}
-	err = err.AddL(p.syms.Set("@INTERFACE", asmInt{n: language}, false))
+	p.intSyms.Interface = &language
 
 	// TASM 5.0 actually doesn't even set @STACK for the TCHUGE model.
 	// Certainly a bug.
+	var stackgroup asmExpression
 	if farstack {
-		err = err.AddL(p.syms.Set("@STACK", asmExpression("STACK"), false))
+		stackgroup = asmExpression("STACK")
 	} else {
-		err = err.AddL(p.syms.Set("@STACK", asmExpression("DGROUP"), false))
+		stackgroup = asmExpression("DGROUP")
 	}
+	p.intSyms.StackGroup = &stackgroup
 
 	// Initialize default segments.
 	p.segCodeName = getSegName(codesegname, "_TEXT", model.codesize >= 1)
@@ -1038,19 +1039,16 @@ func (p *parser) setCPU(directive string) (err ErrorList) {
 	if flag, ok := cpuMap[directive]; ok {
 		cpu |= flag
 	} else if flag, ok := fpuMap[directive]; ok {
-		if prevCPU, ok := p.syms.Map["@CPU"]; ok {
-			cpu |= cpuFlag(prevCPU.Val.(asmInt).n) & fCPUMask
-		}
-		cpu |= flag
+		cpu |= (p.intSyms.CPU & fCPUMask) | flag
 	}
-	wordsize := int64(2)
+	wordsize := uint8(2)
 	if cpu&cpuX64 != 0 {
 		wordsize = 8
 	} else if cpu&cpu386 != 0 {
 		wordsize = 4
 	}
-	err = err.AddL(p.syms.Set("@CPU", asmInt{n: int64(cpu), base: 2}, false))
-	err = err.AddL(p.syms.Set("@WORDSIZE", asmInt{n: wordsize}, false))
+	p.intSyms.CPU = cpu
+	p.intSyms.WordSize = wordsize
 	return err
 }
 
@@ -1060,7 +1058,6 @@ func CPU(p *parser, it *item) ErrorList {
 }
 
 func SEGMENT(p *parser, it *item) ErrorList {
-	cpuWordSize := uint8(p.syms.Map["@WORDSIZE"].Val.(asmInt).n) // can never fail
 	wordsize := uint8(0)
 	var attributes = map[string]func(){
 		"USE16": func() { wordsize = 2 },
@@ -1080,7 +1077,7 @@ func SEGMENT(p *parser, it *item) ErrorList {
 			}
 		}
 	}
-	if wordsize > cpuWordSize {
+	if wordsize > p.intSyms.WordSize {
 		var str string
 		switch wordsize {
 		case 4:
@@ -1209,7 +1206,7 @@ func (p *parser) evalNew(it *item) (err ErrorList) {
 
 func Parse(filename string, syntax string, includePaths []string) (*parser, ErrorList) {
 	p := &parser{syntax: syntax}
-	syms := *NewSymMap(&p.caseSensitive)
+	syms := *NewSymMap(&p.caseSensitive, &p.intSyms)
 	p.syms = syms
 	p.setCPU("8086")
 
@@ -1217,11 +1214,8 @@ func Parse(filename string, syntax string, includePaths []string) (*parser, Erro
 	if i := strings.IndexByte(filenamesym, '.'); i != -1 {
 		filenamesym = filenamesym[:i]
 	}
-	// TODO: Use the correct case (@FileName and ??filename)
-	p.syms.Set("@FILENAME", asmExpression(strings.ToUpper(filenamesym)), true)
-
-	filename8 := fmt.Sprintf("%-8s", filenamesym)[:8]
-	p.syms.Set("??FILENAME", asmString(filename8), true)
+	p.intSyms.FileName = asmExpression(strings.ToUpper(filenamesym))
+	p.intSyms.FileName8 = asmString(fmt.Sprintf("%-8s", filenamesym)[:8])
 
 	err := p.StepIntoFile(filename, includePaths)
 	if err.Severity() >= ESFatal {

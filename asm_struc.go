@@ -126,7 +126,7 @@ func STRUC(p *parser, it *item) (err ErrorList) {
 	p.struc = &asmStruc{
 		name:    sym,
 		flag:    sStruc,
-		members: *NewSymMap(&p.caseSensitive),
+		members: *NewSymMap(&p.caseSensitive, nil),
 		prev:    p.struc,
 	}
 	if it.val == "UNION" {

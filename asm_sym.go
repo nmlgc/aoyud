@@ -22,8 +22,79 @@ func (s Symbol) String() string {
 	return ret + s.Val.String() + "\n"
 }
 
+// InternalSyms contains all internal symbols that can't be overwritten
+// through the normal symbol map. Pointer values are undefined at first.
+type InternalSyms struct {
+	FileName   asmExpression
+	FileName8  asmString
+	StackGroup *asmExpression
+	ThirtyTwo  *uint8
+	Model      *uint8
+	CodeSize   *uint8
+	DataSize   *uint8
+	Interface  *uint8
+	CPU        cpuFlag
+	WordSize   uint8
+}
+
+// Lookup maps the members of s to their symbol names and returns their values
+// as asmVal types.
+func (s *InternalSyms) Lookup(name string) (asmVal, bool) {
+	if s == nil {
+		return nil, false
+	}
+	var num **uint8
+
+	// This isn't actually what either TASM or JWasm do, but accepting both
+	// real and uppercase seems the most sensible option that still allows
+	// custom spellings to be used for user-defined symbols together with
+	// OPTION CASEMAP:NONE.
+	switch name {
+	case "??filename", "??FILENAME":
+		return s.FileName8, true
+	case "@32Bit", "@32BIT":
+		num = &s.ThirtyTwo
+	case "@CodeSize", "@CODESIZE":
+		num = &s.CodeSize
+	case "@Cpu", "@CPU":
+		return asmInt{n: int64(s.CPU), base: 2}, true
+	case "@DataSize", "@DATASIZE":
+		num = &s.DataSize
+	case "@FileName", "@FILENAME":
+		return s.FileName, true
+	case "@Interface", "@INTERFACE":
+		num = &s.Interface
+	case "@Model", "@MODEL":
+		num = &s.Model
+	case "@stack", "@STACK":
+		if s.StackGroup == nil {
+			return nil, true
+		}
+		return *s.StackGroup, true
+	case "@WordSize", "@WORDSIZE":
+		return asmInt{n: int64(s.WordSize)}, true
+	}
+	if num == nil {
+		return nil, false
+	}
+	if *num == nil {
+		return nil, true
+	}
+	return asmInt{n: int64(**num)}, true
+}
+
+func (s InternalSyms) SegmentWordSize() uint8 {
+	// @32BIT is only set in TASM mode, which can't be used to compile 64-bit
+	// code anyway, so I guess this is fine?
+	if s.ThirtyTwo != nil {
+		return 2 + (*s.ThirtyTwo * 2)
+	}
+	return s.WordSize
+}
+
 type SymMap struct {
 	Map           map[string]Symbol
+	Internals     *InternalSyms
 	CaseSensitive *bool
 }
 
@@ -71,7 +142,9 @@ func (s *SymMap) Equal(s1 string, s2 string) bool {
 // together with a possible error.
 func (s *SymMap) Lookup(name string) (asmVal, ErrorList) {
 	realName := s.ToSymCase(name)
-	if ret, ok := s.Map[realName]; ok {
+	if ret, ok := s.Internals.Lookup(realName); ok {
+		return ret, nil
+	} else if ret, ok := s.Map[realName]; ok {
 		var err ErrorList
 		if !(*s.CaseSensitive) && name != realName {
 			if _, ok := s.Map[name]; ok {
@@ -107,14 +180,7 @@ func (s *SymMap) GetSegment(name string) (*asmSegment, ErrorList) {
 			// We'll have SymMap.Set handle this error message.
 		}
 	}
-	cpuWordSize := uint8(s.Map["@WORDSIZE"].Val.(asmInt).n) // should never fail
-	seg := &asmSegment{name: name, wordsize: cpuWordSize}
-
-	// @32BIT is only set in TASM mode, which can't be used to compile 64-bit
-	// code anyway, so I guess this is fine?
-	if thirtytwo, ok := s.Map["@32BIT"]; ok {
-		seg.wordsize = uint8(2 + (thirtytwo.Val.(asmInt).n * 2))
-	}
+	seg := &asmSegment{name: name, wordsize: s.Internals.SegmentWordSize()}
 	return seg, err.AddL(s.Set(name, seg, false))
 }
 
@@ -184,7 +250,11 @@ func (s *SymMap) Set(name string, val asmVal, constant bool) ErrorList {
 	}
 
 	realName := s.ToSymCase(name)
-	if existing := s.Map[realName]; existing.Val != nil {
+	if _, ok := s.Internals.Lookup(realName); ok {
+		return ErrorListF(ESError,
+			"can't overwrite internal symbol: %s", realName,
+		)
+	} else if existing := s.Map[realName]; existing.Val != nil {
 		fail := func() (err ErrorList) {
 			err = err.AddF(ESError,
 				"symbol already defined as %s: %s",
@@ -206,6 +276,10 @@ func (s *SymMap) Set(name string, val asmVal, constant bool) ErrorList {
 
 // NewSymMap creates a new symbol map whose case sensitivity can be controlled
 // through the given pointer.
-func NewSymMap(caseSensitive *bool) *SymMap {
-	return &SymMap{Map: make(map[string]Symbol), CaseSensitive: caseSensitive}
+func NewSymMap(caseSensitive *bool, internals *InternalSyms) *SymMap {
+	return &SymMap{
+		Map:           make(map[string]Symbol),
+		CaseSensitive: caseSensitive,
+		Internals:     internals,
+	}
 }
