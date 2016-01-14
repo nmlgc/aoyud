@@ -466,18 +466,16 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 	}
 
 	// Parse results
-	model := modelVals{}
-	modelstr := ""
+	model := MemoryModel(0)
 	farstack := false
 	showNearstackWarning := false
-	flat := false
 	thirtytwo := uint8(0)
 	language := uint8(0)
 	codesegname := ""
 	datasegname := ""
 
 	parseStack := func(far bool) (err ErrorList) {
-		if flat && showNearstackWarning && (!far || !farstack) {
+		if model&Flat != 0 && showNearstackWarning && (!far || !farstack) {
 			err = err.AddF(ESWarning,
 				"NEARSTACK is ignored for flat memory models",
 			)
@@ -491,31 +489,23 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 		return err
 	}
 
-	modelValMap := modifierMap{
-		"TINY":    func() ErrorList { model = modelVals{1, 0, 0}; return nil },
-		"SMALL":   func() ErrorList { model = modelVals{2, 0, 0}; return nil },
-		"COMPACT": func() ErrorList { model = modelVals{3, 0, 1}; return nil },
-		"MEDIUM":  func() ErrorList { model = modelVals{4, 1, 0}; return nil },
-		"LARGE":   func() ErrorList { model = modelVals{5, 1, 1}; return nil },
-		"HUGE":    func() ErrorList { model = modelVals{6, 1, 2}; return nil },
-		"TPASCAL": func() ErrorList { model = modelVals{0, 0, 1}; return nil },
-		"TCHUGE": func() ErrorList {
-			model = modelVals{7, 1, 2}
-			flat = true
-			return parseStack(true)
-		},
-		"FLAT": func() ErrorList {
-			// Yes, the TASM manual actually got @Model wrong.
-			model = modelVals{1, 0, 0}
-			flat = true
-			if p.intSyms.CPU&cpu386 == 0 {
-				return err.AddF(ESError, "FLAT model requires at least a .386 CPU")
-			} else if p.syntax == "MASM" {
-				model.model = 7
-			}
-			return parseStack(true)
-		},
+	modelMap := map[string]struct {
+		vals  modelVals
+		model MemoryModel
+	}{
+		"TINY":    {modelVals{1, 0, 0}, Tiny},
+		"SMALL":   {modelVals{2, 0, 0}, Small},
+		"COMPACT": {modelVals{3, 0, 1}, Compact},
+		"MEDIUM":  {modelVals{4, 1, 0}, Medium},
+		"LARGE":   {modelVals{5, 1, 1}, Large},
+		"HUGE":    {modelVals{6, 1, 2}, Huge},
+		"TPASCAL": {modelVals{0, 0, 1}, TPascal},
+		"TCHUGE":  {modelVals{7, 1, 2}, TCHuge},
+		// Yes, the TASM manual actually got @Model wrong.
+		// For MASM, @Model is changed to 7.
+		"FLAT": {modelVals{1, 0, 0}, Flat},
 	}
+	masmFlat := modelVals{7, 0, 0}
 
 	// interfaces defines values for the @Interface symbol.
 	interfaces := modifiers{typ: "language", m: modifierMap{
@@ -588,16 +578,29 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 		return true
 	}
 
-	parseModel := func() (err ErrorList) {
+	parseModel := func(modelstr string) (err ErrorList) {
 		if modelstr == "" {
 			return err.AddF(ESError, "no memory model given: %s", it.params)
 		}
 		modelstr = strings.ToUpper(modelstr)
-		if mod, ok := modelValMap[modelstr]; ok {
-			err = err.AddL(mod())
-			p.intSyms.Model = &model.model
-			p.intSyms.CodeSize = &model.codesize
-			p.intSyms.DataSize = &model.datasize
+		if mod, ok := modelMap[modelstr]; ok {
+			model = mod.model
+			p.intSyms.SymModel = &mod.vals.model
+			p.intSyms.SymCodeSize = &mod.vals.codesize
+			p.intSyms.SymDataSize = &mod.vals.datasize
+			p.intSyms.Model = &mod.model
+			if model == Flat {
+				if p.intSyms.CPU&cpu386 == 0 {
+					return err.AddF(ESError,
+						"FLAT model requires at least a .386 CPU",
+					)
+				} else if p.syntax == "MASM" {
+					p.intSyms.SymModel = &masmFlat.model
+				}
+			}
+			if mod.model&Flat != 0 {
+				err = err.AddL(parseStack(true))
+			}
 		} else {
 			err = err.AddF(ESError, "invalid memory model: %s", modelstr)
 		}
@@ -617,13 +620,13 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 	if p.syntax == "TASM" {
 		// Optional model modifier
 		modelStream := NewLexStreamAt(it.pos, it.params[0])
-		modelstr = strings.ToUpper(modelStream.nextUntil(whitespace))
+		modelstr := strings.ToUpper(modelStream.nextUntil(whitespace))
 
 		// Yup, reading multiple ones until a valid model name.
 		for modelStream.peek() != eof {
 			tasmParseModifier(modelstr, tasmModelModifiers)
 			modelstr = strings.ToUpper(modelStream.nextUntil(whitespace))
-			if _, ok := modelValMap[modelstr]; ok {
+			if _, ok := modelMap[modelstr]; ok {
 				break
 			}
 		}
@@ -632,14 +635,14 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 		}
 
 		// Model
-		err = err.AddL(parseModel())
+		err = err.AddL(parseModel(modelstr))
 		if err.Severity() >= ESError {
 			return err
 		}
 
 		// Optional code segment name
 		codesegname = modelStream.nextUntil(whitespace)
-		if codesegname != "" && model.codesize < 1 {
+		if codesegname != "" && model&FarCode == 0 {
 			err = err.AddF(ESWarning,
 				"code segment name ignored for near-code models: %s",
 				codesegname,
@@ -687,8 +690,7 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 		// MASM's maximum of 4, so we explicitly check the range again.
 		err = err.AddL(it.checkParamRange(Range{1, 3}))
 	} else {
-		modelstr = it.params[0]
-		err = err.AddL(parseModel())
+		err = err.AddL(parseModel(it.params[0]))
 		if err.Severity() >= ESError {
 			return err
 		}
@@ -715,17 +717,17 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 	p.intSyms.StackGroup = &stackgroup
 
 	// Initialize default segments.
-	p.segCodeName = getSegName(codesegname, "_TEXT", model.codesize >= 1)
-	p.segDataName = getSegName(datasegname, "_DATA", modelstr == "TCHUGE")
+	p.segCodeName = getSegName(codesegname, "_TEXT", model&FarCode != 0)
+	p.segDataName = getSegName(datasegname, "_DATA", model == TCHuge)
 	codeseg, errCS := p.syms.GetSegment(p.segCodeName)
 	dataseg, errDS := p.syms.GetSegment(p.segDataName)
 	err = err.AddL(errCS)
 	err = err.AddL(errDS)
-	if !flat {
+	if model&Flat == 0 {
 		dgroup, errDGroup := p.syms.GetGroup("DGROUP")
 		err = err.AddL(errDGroup)
 		err = err.AddL(dgroup.Add(dataseg))
-		if modelstr == "TINY" {
+		if model == Tiny {
 			err = err.AddL(dgroup.Add(codeseg))
 		}
 	}

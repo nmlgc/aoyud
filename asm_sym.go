@@ -22,6 +22,26 @@ func (s Symbol) String() string {
 	return ret + s.Val.String() + "\n"
 }
 
+type MemoryModel uint8
+
+const (
+	FarCode    MemoryModel = (1 << iota)
+	FarData                = (1 << iota)
+	HugeData               = (1 << iota)
+	CSInDGroup             = (1 << iota)
+	Turbo                  = (1 << iota) // Indicates the TPASCAL model
+	Flat                   = (1 << iota)
+
+	Tiny    = CSInDGroup
+	Small   = 0
+	Compact = FarData
+	Medium  = FarCode
+	Large   = FarData | FarCode
+	Huge    = HugeData | FarCode
+	TPascal = Turbo | Compact
+	TCHuge  = Flat | Huge
+)
+
 // InternalSyms contains all internal symbols that can't be overwritten
 // through the normal symbol map. Pointer values are undefined at first.
 type InternalSyms struct {
@@ -29,12 +49,16 @@ type InternalSyms struct {
 	FileName8  asmString
 	StackGroup *asmExpression
 	ThirtyTwo  *uint8
-	Model      *uint8
-	CodeSize   *uint8
-	DataSize   *uint8
+	Model      *MemoryModel
 	Interface  *uint8
 	CPU        cpuFlag
 	WordSize   uint8
+	// We keep those in addition to the MemoryModel value. Auto-generating
+	// them from Model is not worth the hassle, especially because of the
+	// different value for FLAT in TASM and MASM.
+	SymModel    *uint8
+	SymCodeSize *uint8
+	SymDataSize *uint8
 }
 
 // Lookup maps the members of s to their symbol names and returns their values
@@ -55,17 +79,17 @@ func (s *InternalSyms) Lookup(name string) (asmVal, bool) {
 	case "@32Bit", "@32BIT":
 		num = &s.ThirtyTwo
 	case "@CodeSize", "@CODESIZE":
-		num = &s.CodeSize
+		num = &s.SymCodeSize
 	case "@Cpu", "@CPU":
 		return asmInt{n: int64(s.CPU), base: 2}, true
 	case "@DataSize", "@DATASIZE":
-		num = &s.DataSize
+		num = &s.SymDataSize
 	case "@FileName", "@FILENAME":
 		return s.FileName, true
 	case "@Interface", "@INTERFACE":
 		num = &s.Interface
 	case "@Model", "@MODEL":
-		num = &s.Model
+		num = &s.SymModel
 	case "@stack", "@STACK":
 		if s.StackGroup == nil {
 			return nil, true
