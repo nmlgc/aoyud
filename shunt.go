@@ -228,20 +228,29 @@ func (cte CalcToEmitOperator) Len() uint {
 }
 
 type DUPOperator struct {
-	Count Calcable
-	Data  Emittable
+	count Calcable
+	data  Emittable
 }
 
 func (dup DUPOperator) String() string {
-	return fmt.Sprintf("(%s DUP(%s))", dup.Count, dup.Data)
+	return fmt.Sprintf("(%s DUP(%s))", dup.count, dup.data)
 }
 
 func (dup DUPOperator) Emit() []byte {
-	return bytes.Repeat(dup.Data.Emit(), int(dup.Count.Calc().n))
+	return bytes.Repeat(dup.data.Emit(), int(dup.count.Calc().n))
 }
 
 func (dup DUPOperator) Len() uint {
-	return dup.Data.Len() * uint(dup.Count.Calc().n)
+	return dup.data.Len() * uint(dup.count.Calc().n)
+}
+
+func NewDUPOperator(count Calcable, data Emittable) (*DUPOperator, ErrorList) {
+	if count.Calc().n < 0 {
+		return nil, ErrorListF(ESError,
+			"count must be positive or zero: %s", count.String(),
+		)
+	}
+	return &DUPOperator{count, data}, nil
 }
 
 type DataArray []Emittable
@@ -668,9 +677,11 @@ func (s *shuntStack) ToEmitTree() (Emittable, ErrorList) {
 		case opDup:
 			data, errData := s.ToEmitTree()
 			count, errCount := s.ToCalcTree()
+			dup, errDup := NewDUPOperator(count, data)
 			err = err.AddL(errData)
 			err = err.AddL(errCount)
-			return DUPOperator{count, data}, err
+			err = err.AddL(errDup)
+			return dup, err
 		}
 		cOp, errCOp := s.processCalcOp(root.(*shuntOp))
 		return CalcToEmitOperator{cOp}, err.AddL(errCOp)
