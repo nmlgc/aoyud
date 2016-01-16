@@ -116,6 +116,9 @@ func init() {
 		"SEGMENT": {SEGMENT, Mandatory, NoStruct, Range{0, 1}},
 		"ENDS":    {ENDS, Optional, 0, req(0)},
 		"GROUP":   {GROUP, Mandatory, 0, Range{1, -1}},
+
+		// TODO: Add the Ideal mode version, which leaves the segment open.
+		".STACK": {STACK, NotAllowed, NoStruct, Range{0, 1}},
 		// Data allocations
 		"DB": data,
 		"DW": data,

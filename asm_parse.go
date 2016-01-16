@@ -1098,6 +1098,46 @@ func SEGMENT(p *parser, it *item) ErrorList {
 	return errList
 }
 
+func STACK(p *parser, it *item) (err ErrorList) {
+	if p.intSyms.StackGroup == nil {
+		return ErrorListF(ESError, "model must be specified first")
+	}
+	size := int64(0)
+	if len(it.params) > 0 {
+		newsize, errSize := p.syms.evalInt(it.pos, it.params[0])
+		err = err.AddL(errSize)
+		if errSize.Severity() >= ESError {
+			return err
+		} else if newsize.n < 0 {
+			return err.AddF(ESError,
+				"count must be positive or zero: %s", newsize,
+			)
+		}
+		size = newsize.n
+	} else {
+		size = 0x400
+	}
+	seg, errSeg := p.syms.GetSegment("STACK")
+	err = err.AddL(errSeg)
+	if err.Severity() >= ESError {
+		return err
+	}
+	if *p.intSyms.StackGroup == "DGROUP" {
+		err = err.AddL(p.AddToDGroup(seg))
+	}
+
+	size -= int64(seg.width())
+	if size < 0 {
+		return err
+	}
+	data, errDup := NewDUPOperator(asmInt{n: size}, asmString('\x00'))
+	err = err.AddL(errDup)
+	if errDup.Severity() >= ESError {
+		return err
+	}
+	return err.AddL(seg.AddData(nil, data))
+}
+
 func ENDS(p *parser, it *item) (err ErrorList) {
 	if p.seg != nil && p.syms.Equal(p.seg.name, it.sym) {
 		if p.struc != nil {

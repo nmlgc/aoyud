@@ -381,3 +381,11 @@ func (p *parser) EmitData(it *item, unit DataUnit) (err ErrorList) {
 	}
 	return err
 }
+
+func (p *parser) AddToDGroup(seg *asmSegment) (err ErrorList) {
+	if p.intSyms.Model != nil && *p.intSyms.Model&Flat == 0 {
+		dgroup, err := p.syms.GetGroup("DGROUP")
+		return err.AddL(dgroup.Add(seg))
+	}
+	return nil
+}
