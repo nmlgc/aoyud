@@ -26,9 +26,6 @@ type Nestable interface {
 	OpenThings() string
 	// Returns a friendly name of the current block.
 	Name() string
-	// Returns a pointer to the block at the previous nesting level or an
-	// explicit nil if no more nested blocks are left.
-	Prev() Nestable
 }
 
 // asmInt represents an integer that will be output in a defined base.
@@ -366,14 +363,17 @@ type NestInfo struct {
 
 // ErrorListOpen returns an "open block" error list for block and all previous
 // nested blocks.
-func ErrorListOpen(block Nestable) ErrorList {
-	str := block.OpenThing() + ": "
-	if block.Prev() != nil {
-		str = block.OpenThings() + ": "
+func ErrorListOpen(nest []Nestable) ErrorList {
+	if len(nest) == 0 {
+		return nil
 	}
-	str += block.Name()
-	for block := block.Prev(); block != nil; block = block.Prev() {
-		str += " ← " + block.Name()
+	str := nest[0].OpenThing() + ": "
+	if len(nest) >= 2 {
+		str = nest[0].OpenThings() + ": "
+	}
+	str += nest[len(nest)-1].Name()
+	for i := len(nest) - 2; i >= 0; i-- {
+		str += " ← " + nest[i].Name()
 	}
 	return ErrorListF(ESWarning, str)
 }
@@ -391,11 +391,10 @@ type parser struct {
 	segCodeName     string // Name of the segment entered with .CODE
 	segDataName     string // Name of the segment entered with .DATA
 	// Open blocks
-	proc    NestInfo
-	macro   NestInfo
-	struc   *asmStruc
-	seg     *asmSegment
-	segNest int // Tracks the number of open SEGMENT blocks
+	proc   NestInfo
+	macro  NestInfo
+	strucs []Nestable
+	segs   []Nestable
 	// Conditionals
 	ifNest  int  // IF nesting level
 	ifMatch int  // Last IF nesting level that evaluated to true
@@ -1092,9 +1091,7 @@ func SEGMENT(p *parser, it *item) ErrorList {
 	if wordsize != 0 {
 		seg.wordsize = wordsize
 	}
-	seg.prev = p.seg
-	p.seg = seg
-	p.segNest++
+	p.segs = append(p.segs, seg)
 	return errList
 }
 
@@ -1139,30 +1136,42 @@ func STACK(p *parser, it *item) (err ErrorList) {
 }
 
 func ENDS(p *parser, it *item) (err ErrorList) {
-	if p.seg != nil && p.syms.Equal(p.seg.name, it.sym) {
-		if p.struc != nil {
-			err = ErrorListOpen(p.struc)
-			p.struc = nil
+	var curSeg *asmSegment
+	var curStruc *asmStruc
+	var prevStruc *asmStruc
+	if len(p.segs) >= 1 {
+		curSeg = p.segs[len(p.segs)-1].(*asmSegment)
+	}
+	if len(p.strucs) >= 1 {
+		curStruc = p.strucs[len(p.strucs)-1].(*asmStruc)
+	}
+	if len(p.strucs) >= 2 {
+		prevStruc = p.strucs[len(p.strucs)-2].(*asmStruc)
+	}
+
+	if curSeg != nil && p.syms.Equal(curSeg.name, it.sym) {
+		if curStruc != nil {
+			err = ErrorListOpen(p.strucs)
+			p.strucs = nil
 		}
-		p.seg = p.seg.prev
-		p.segNest--
+		p.segs = p.segs[:len(p.segs)-1]
 		return err
-	} else if p.struc != nil {
-		// See parseSTRUC for an explanation of this stupidity
+	} else if curStruc != nil {
+		// See STRUC for an explanation of this stupidity
 		expSym := ""
-		if p.struc.prev == nil {
-			expSym = p.struc.name
+		if prevStruc == nil {
+			expSym = curStruc.name
 		}
 		if p.syms.Equal(it.sym, expSym) {
 			constant := p.syntax != "TASM"
-			if p.struc.prev == nil {
-				err = p.syms.Set(p.struc.name, *p.struc, constant)
+			if prevStruc == nil {
+				err = p.syms.Set(curStruc.name, *curStruc, constant)
 			} else {
-				ptr := &asmPtr{sym: &p.struc.name, unit: p.struc}
-				err = p.struc.prev.members.Set(p.struc.name, *p.struc, constant)
-				p.struc.prev.AddData(ptr, p.struc)
+				ptr := &asmPtr{sym: &curStruc.name, unit: curStruc}
+				err = prevStruc.members.Set(curStruc.name, *curStruc, constant)
+				prevStruc.AddData(ptr, curStruc)
 			}
-			p.struc = p.struc.prev
+			p.strucs = p.strucs[:len(p.strucs)-1]
 			return err
 		}
 	}
@@ -1222,11 +1231,11 @@ func (p *parser) eval(it *item) (keep bool, err ErrorList) {
 			}
 		}
 	}
-	if k.Type&Data != 0 && p.seg == nil && p.struc == nil {
+	if k.Type&Data != 0 && len(p.segs) == 0 && len(p.strucs) == 0 {
 		return true, ErrorListF(ESError,
 			"code or data emission requires a segment: %s", it,
 		)
-	} else if p.struc != nil && k.Type&(NoStruct) != 0 {
+	} else if len(p.strucs) >= 1 && k.Type&(NoStruct) != 0 {
 		return true, ErrorListF(ESError,
 			"%s not allowed inside structure definition", it.val,
 		)
@@ -1291,12 +1300,8 @@ func Parse(filename string, syntax string, includePaths []string) (*parser, Erro
 	}
 
 	posEOF := NewItemPos(&filename, 0)
-	if p.struc != nil {
-		err = err.AddLAt(posEOF, ErrorListOpen(p.struc))
-	}
-	if p.segNest != 0 {
-		err = err.AddLAt(posEOF, ErrorListOpen(p.seg))
-	}
+	err = err.AddLAt(posEOF, ErrorListOpen(p.strucs))
+	err = err.AddLAt(posEOF, ErrorListOpen(p.segs))
 	if p.proc.nest != 0 {
 		err = err.AddFAt(posEOF, ESWarning,
 			"ignoring procedure without an ENDP directive: %s", p.proc.name,

@@ -19,7 +19,6 @@ type asmStruc struct {
 	flag    strucFlag
 	data    BlobList
 	members SymMap
-	prev    *asmStruc
 }
 
 func (v asmStruc) Thing() string {
@@ -31,13 +30,6 @@ func (v asmStruc) Thing() string {
 
 func (v asmStruc) OpenThing() string  { return "open structure" }
 func (v asmStruc) OpenThings() string { return "open structures" }
-
-func (v asmStruc) Prev() Nestable {
-	if v.prev != nil {
-		return v.prev
-	}
-	return nil
-}
 
 func (v asmStruc) Name() string {
 	if v.name == "" {
@@ -92,7 +84,7 @@ func (v *asmStruc) Offset() (chunk uint, off uint64) {
 }
 
 func (v *asmStruc) AddPointer(p *parser, sym string, ptr asmDataPtr) (err ErrorList) {
-	if v.prev == nil && p.syntax == "TASM" {
+	if len(p.strucs) == 1 && p.syntax == "TASM" {
 		err = p.syms.Set(sym, ptr, true)
 	}
 	return err.AddL(v.members.Set(sym, ptr, true))
@@ -111,7 +103,7 @@ func STRUC(p *parser, it *item) (err ErrorList) {
 	// On the other hand, nested structures can *optionally* have a
 	// symbol name *after* the directive. Yes, it's stupid.
 	sym := it.sym
-	if p.struc != nil {
+	if len(p.strucs) >= 1 {
 		if it.sym != "" {
 			return ErrorListF(ESError,
 				"name of nested structure must come after %s: %s",
@@ -123,14 +115,14 @@ func STRUC(p *parser, it *item) (err ErrorList) {
 	} else if err := it.missingRequiredSym(); err != nil {
 		return err
 	}
-	p.struc = &asmStruc{
+	struc := &asmStruc{
 		name:    sym,
 		flag:    sStruc,
 		members: *NewSymMap(&p.caseSensitive, nil),
-		prev:    p.struc,
 	}
 	if it.val == "UNION" {
-		p.struc.flag = sUnion
+		struc.flag = sUnion
 	}
+	p.strucs = append(p.strucs, struc)
 	return err
 }

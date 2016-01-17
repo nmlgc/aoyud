@@ -280,8 +280,7 @@ func (g *asmGroup) Add(seg *asmSegment) (err ErrorList) {
 
 type asmSegment struct {
 	name       string
-	chunks     []BlobList  // List of all contiguous data blocks
-	prev       *asmSegment // in order to easily handle nested segments
+	chunks     []BlobList // List of all contiguous data blocks
 	group      *asmGroup
 	overflowed bool
 	wordsize   uint8
@@ -292,13 +291,6 @@ func (s asmSegment) OpenThing() string  { return "open segment" }
 func (s asmSegment) OpenThings() string { return "open segments" }
 func (s asmSegment) Name() string       { return s.name }
 func (s asmSegment) WordSize() uint8    { return s.wordsize }
-
-func (s asmSegment) Prev() Nestable {
-	if s.prev != nil {
-		return s.prev
-	}
-	return nil
-}
 
 func (s asmSegment) String() string {
 	return fmt.Sprintf(
@@ -345,10 +337,12 @@ func (s *asmSegment) AddPointer(p *parser, sym string, ptr asmDataPtr) (err Erro
 
 func (p *parser) CurrentEmissionTarget() EmissionTarget {
 	// It is possible to open structures inside segments, but not vice versa.
-	if p.struc != nil {
-		return p.struc
+	if len(p.strucs) >= 1 {
+		return p.strucs[len(p.strucs)-1].(*asmStruc)
+	} else if len(p.segs) >= 1 {
+		return p.segs[len(p.segs)-1].(*asmSegment)
 	}
-	return p.seg
+	return nil
 }
 
 func (p *parser) EmitPointer(sym string, unit DataUnit) (err ErrorList) {
@@ -371,7 +365,7 @@ func (p *parser) EmitData(it *item, unit DataUnit) (err ErrorList) {
 	// their size at the beginning of pass 2. In segments, we don't; in fact,
 	// doing so effectively emits all data twice, with all pointers pointing to
 	// the second, unnecessary copy.
-	if p.pass2 || p.struc != nil {
+	if p.pass2 || len(p.strucs) > 0 {
 		blob, errData := p.syms.evalData(it.pos, it.params[0], unit)
 		err = err.AddL(errData)
 		if errData.Severity() < ESError {
