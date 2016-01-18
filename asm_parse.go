@@ -1288,6 +1288,10 @@ func Parse(filename string, syntax string, includePaths []string) (*parser, Erro
 			p.file = p.file.prev
 		}
 	}
+	// Clear the state of nested blocks before starting the next pass.
+	// Otherwise, we'd report all unclosed segments once per pass.
+	p.segs = nil
+	p.strucs = nil
 
 	// Pass 2
 	p.pass2 = true
