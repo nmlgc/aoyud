@@ -378,8 +378,40 @@ func (p *parser) EmitData(it *item, unit DataUnit) (err ErrorList) {
 
 func (p *parser) AddToDGroup(seg *asmSegment) (err ErrorList) {
 	if p.intSyms.Model != nil && *p.intSyms.Model&Flat == 0 {
-		dgroup, err := p.syms.GetGroup("DGROUP")
+		dgroup, err := p.GetGroup("DGROUP")
 		return err.AddL(dgroup.Add(seg))
 	}
 	return nil
+}
+
+// GetSegment returns a pointer to the segment with the given name, or tries
+// to create the segment if it doesn't exist yet.
+func (p *parser) GetSegment(name string) (*asmSegment, ErrorList) {
+	val, err := p.syms.Lookup(name)
+	if val != nil {
+		switch val.(type) {
+		case *asmSegment:
+			return val.(*asmSegment), err
+		default:
+			// We'll have SymMap.Set handle this error message.
+		}
+	}
+	seg := &asmSegment{name: name, wordsize: p.intSyms.SegmentWordSize()}
+	return seg, err.AddL(p.syms.Set(name, seg, false))
+}
+
+// GetGroup returns a pointer to the group with the given name, or tries to
+// create the group if it doesn't exist yet.
+func (p *parser) GetGroup(name string) (*asmGroup, ErrorList) {
+	val, err := p.syms.Lookup(name)
+	if val != nil {
+		switch val.(type) {
+		case *asmGroup:
+			return val.(*asmGroup), err
+		default:
+			// We'll have SymMap.Set handle this error message.
+		}
+	}
+	group := &asmGroup{name: name}
+	return group, err.AddL(p.syms.Set(name, group, false))
 }

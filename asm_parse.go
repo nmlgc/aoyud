@@ -718,12 +718,12 @@ func MODEL(p *parser, it *item) (err ErrorList) {
 	// Initialize default segments.
 	p.segCodeName = getSegName(codesegname, "_TEXT", model&FarCode != 0)
 	p.segDataName = getSegName(datasegname, "_DATA", model == TCHuge)
-	codeseg, errCS := p.syms.GetSegment(p.segCodeName)
-	dataseg, errDS := p.syms.GetSegment(p.segDataName)
+	codeseg, errCS := p.GetSegment(p.segCodeName)
+	dataseg, errDS := p.GetSegment(p.segDataName)
 	err = err.AddL(errCS)
 	err = err.AddL(errDS)
 	if model&Flat == 0 {
-		dgroup, errDGroup := p.syms.GetGroup("DGROUP")
+		dgroup, errDGroup := p.GetGroup("DGROUP")
 		err = err.AddL(errDGroup)
 		err = err.AddL(dgroup.Add(dataseg))
 		if model == Tiny {
@@ -1065,7 +1065,7 @@ func SEGMENT(p *parser, it *item) ErrorList {
 		"USE32": func() { wordsize = 4 },
 		"USE64": func() { wordsize = 8 },
 	}
-	seg, errList := p.syms.GetSegment(it.sym)
+	seg, errList := p.GetSegment(it.sym)
 	if errList.Severity() >= ESError {
 		return errList
 	}
@@ -1114,7 +1114,7 @@ func STACK(p *parser, it *item) (err ErrorList) {
 	} else {
 		size = 0x400
 	}
-	seg, errSeg := p.syms.GetSegment("STACK")
+	seg, errSeg := p.GetSegment("STACK")
 	err = err.AddL(errSeg)
 	if err.Severity() >= ESError {
 		return err
@@ -1179,12 +1179,12 @@ func ENDS(p *parser, it *item) (err ErrorList) {
 }
 
 func GROUP(p *parser, it *item) (err ErrorList) {
-	group, err := p.syms.GetGroup(it.sym)
+	group, err := p.GetGroup(it.sym)
 	if err.Severity() >= ESError {
 		return err
 	}
 	for _, seg := range it.params {
-		seg, errSeg := p.syms.GetSegment(seg)
+		seg, errSeg := p.GetSegment(seg)
 		err = err.AddL(errSeg)
 		if errSeg.Severity() < ESError {
 			err = err.AddL(group.Add(seg))
