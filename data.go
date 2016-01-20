@@ -385,8 +385,8 @@ func (p *parser) AddToDGroup(seg *asmSegment) (err ErrorList) {
 }
 
 // GetSegment returns a pointer to the segment with the given name, or tries
-// to create the segment if it doesn't exist yet.
-func (p *parser) GetSegment(name string) (*asmSegment, ErrorList) {
+// to create it and optionally adds it to DGROUP if it doesn't exist yet.
+func (p *parser) GetSegment(name string, addToDGroup bool) (*asmSegment, ErrorList) {
 	val, err := p.syms.Lookup(name)
 	if val != nil {
 		switch val.(type) {
@@ -397,7 +397,11 @@ func (p *parser) GetSegment(name string) (*asmSegment, ErrorList) {
 		}
 	}
 	seg := &asmSegment{name: name, wordsize: p.intSyms.SegmentWordSize()}
-	return seg, err.AddL(p.syms.Set(name, seg, false))
+	err = err.AddL(p.syms.Set(name, seg, false))
+	if err.Severity() < ESError && addToDGroup {
+		err = err.AddL(p.AddToDGroup(seg))
+	}
+	return seg, err
 }
 
 // GetGroup returns a pointer to the group with the given name, or tries to
