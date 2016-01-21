@@ -286,11 +286,17 @@ type asmSegment struct {
 	wordsize   uint8
 }
 
-func (s asmSegment) Thing() string      { return "segment name" }
-func (s asmSegment) OpenThing() string  { return "open segment" }
-func (s asmSegment) OpenThings() string { return "open segments" }
-func (s asmSegment) Name() string       { return s.name }
-func (s asmSegment) WordSize() uint8    { return s.wordsize }
+type asmSegmentBlock struct {
+	seg *asmSegment
+}
+
+func (b asmSegmentBlock) Name() string       { return b.seg.name }
+func (b asmSegmentBlock) OpenThing() string  { return "open segment" }
+func (b asmSegmentBlock) OpenThings() string { return "open segments" }
+
+func (s asmSegment) Thing() string   { return "segment name" }
+func (s asmSegment) Name() string    { return s.name }
+func (s asmSegment) WordSize() uint8 { return s.wordsize }
 
 func (s asmSegment) String() string {
 	return fmt.Sprintf(
@@ -340,7 +346,7 @@ func (p *parser) CurrentEmissionTarget() EmissionTarget {
 	if len(p.strucs) >= 1 {
 		return p.strucs[len(p.strucs)-1].(*asmStruc)
 	} else if len(p.segs) >= 1 {
-		return p.segs[len(p.segs)-1].(*asmSegment)
+		return p.segs[len(p.segs)-1].(*asmSegmentBlock).seg
 	}
 	return nil
 }

@@ -1083,7 +1083,7 @@ func SEGMENT(p *parser, it *item) ErrorList {
 	if wordsize != 0 {
 		seg.wordsize = wordsize
 	}
-	p.segs = append(p.segs, seg)
+	p.segs = append(p.segs, &asmSegmentBlock{seg: seg})
 	return errList
 }
 
@@ -1125,11 +1125,11 @@ func STACK(p *parser, it *item) (err ErrorList) {
 }
 
 func ENDS(p *parser, it *item) (err ErrorList) {
-	var curSeg *asmSegment
+	var curSegBlock *asmSegmentBlock
 	var curStruc *asmStruc
 	var prevStruc *asmStruc
 	if len(p.segs) >= 1 {
-		curSeg = p.segs[len(p.segs)-1].(*asmSegment)
+		curSegBlock = p.segs[len(p.segs)-1].(*asmSegmentBlock)
 	}
 	if len(p.strucs) >= 1 {
 		curStruc = p.strucs[len(p.strucs)-1].(*asmStruc)
@@ -1138,7 +1138,7 @@ func ENDS(p *parser, it *item) (err ErrorList) {
 		prevStruc = p.strucs[len(p.strucs)-2].(*asmStruc)
 	}
 
-	if curSeg != nil && p.syms.Equal(curSeg.name, it.sym) {
+	if curSegBlock != nil && p.syms.Equal(curSegBlock.seg.name, it.sym) {
 		if curStruc != nil {
 			err = ErrorListOpen(p.strucs)
 			p.strucs = nil
