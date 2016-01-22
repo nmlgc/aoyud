@@ -287,12 +287,14 @@ type asmSegment struct {
 }
 
 type asmSegmentBlock struct {
-	seg *asmSegment
+	seg        *asmSegment
+	simplified bool // opened by a simplified segment directive?
 }
 
 func (b asmSegmentBlock) Name() string       { return b.seg.name }
 func (b asmSegmentBlock) OpenThing() string  { return "open segment" }
 func (b asmSegmentBlock) OpenThings() string { return "open segments" }
+func (b asmSegmentBlock) Unclosed() bool     { return b.simplified }
 
 func (s asmSegment) Thing() string   { return "segment name" }
 func (s asmSegment) Name() string    { return s.name }

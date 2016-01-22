@@ -26,6 +26,8 @@ type Nestable interface {
 	OpenThings() string
 	// Returns a friendly name of the current block.
 	Name() string
+	// Returns true if this block doesn't need to be closed.
+	Unclosed() bool
 }
 
 // asmInt represents an integer that will be output in a defined base.
@@ -367,15 +369,24 @@ func ErrorListOpen(nest []Nestable) ErrorList {
 	if len(nest) == 0 {
 		return nil
 	}
-	str := nest[0].OpenThing() + ": "
+	str := ""
+	start := len(nest) - 1
+	for i := start; i >= 0; i-- {
+		if !nest[i].Unclosed() {
+			if i != start {
+				str += " ← "
+			}
+			str += nest[i].Name()
+		}
+	}
+	if str == "" {
+		return nil
+	}
+	prefix := nest[0].OpenThing()
 	if len(nest) >= 2 {
-		str = nest[0].OpenThings() + ": "
+		prefix = nest[0].OpenThings()
 	}
-	str += nest[len(nest)-1].Name()
-	for i := len(nest) - 2; i >= 0; i-- {
-		str += " ← " + nest[i].Name()
-	}
-	return ErrorListF(ESWarning, str)
+	return ErrorListF(ESWarning, prefix+": "+str)
 }
 
 type parser struct {
@@ -1122,6 +1133,68 @@ func STACK(p *parser, it *item) (err ErrorList) {
 		return err
 	}
 	return err.AddL(seg.AddData(nil, data))
+}
+
+func SIMSEG(p *parser, it *item) (err ErrorList) {
+	if p.intSyms.Model == nil {
+		return ErrorListF(ESError, "model must be specified first")
+	}
+
+	// TASM only lets you name certain segments.
+	setSegName := func(defname string, customNameAllowedInTASM bool) string {
+		if len(it.params) >= 1 {
+			if p.syntax != "TASM" {
+				return it.params[0]
+			} else if customNameAllowedInTASM {
+				return it.params[0]
+			}
+			err = err.AddL(it.checkParamRange(Range{0, 0}))
+		}
+		return defname
+	}
+
+	inDGroup := false
+	segname := ""
+	switch it.val {
+	case ".CODE", "CODESEG":
+		segname = p.segCodeName
+		inDGroup = *p.intSyms.Model == Tiny
+		if len(it.params) >= 1 {
+			if p.syntax == "TASM" && *p.intSyms.Model&FarCode == 0 {
+				err = err.AddF(ESWarning,
+					"code segment name ignored for near-code models: %s",
+					it.params[0],
+				)
+			} else {
+				segname = it.params[0]
+			}
+		}
+	case ".DATA", "DATASEG":
+		segname = setSegName(p.segDataName, false)
+		inDGroup = true
+	case ".CONST", "CONST":
+		segname = setSegName("CONST", false)
+		inDGroup = true
+	case ".DATA?", "UDATASEG":
+		segname = setSegName("_BSS", false)
+		inDGroup = true
+	case ".FARDATA", "FARDATA":
+		segname = setSegName("FAR_DATA", true)
+	case ".FARDATA?", "UFARDATA":
+		segname = setSegName("FAR_BSS", true)
+	}
+	seg, segErr := p.GetSegment(segname, inDGroup)
+	err = err.AddL(segErr)
+	if segErr.Severity() >= ESError {
+		return err
+	}
+	// MASM wipes the entire nesting hierarchy when parsing simplified segment
+	// directives. I'd say this is kind of unintuitive when you mix them with
+	// regular segment declarations, so we're adopting TASM's behavior for
+	// both modes here. In the end, this is only about showing the correct
+	// nesting warnings and shouldn't break any correct MASM code.
+	p.segs = append(p.segs, &asmSegmentBlock{seg: seg, simplified: true})
+	return err
 }
 
 func ENDS(p *parser, it *item) (err ErrorList) {

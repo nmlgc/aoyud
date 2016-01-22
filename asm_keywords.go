@@ -39,6 +39,7 @@ func init() {
 	cpu := Keyword{CPU, NotAllowed, 0, req(0)}
 	data := Keyword{DATA, Optional, Data | SingleParam, req(1)}
 	hll := Keyword{nil, NotAllowed, SingleParam, req(1)}
+	simseg := Keyword{SIMSEG, NotAllowed, NoStruct, Range{0, 1}}
 
 	Keywords = map[string]Keyword{
 		"INCLUDE": {INCLUDE, NotAllowed, Evaluated | SingleParam, req(1)},
@@ -117,6 +118,12 @@ func init() {
 		"ENDS":    {ENDS, Optional, 0, req(0)},
 		"GROUP":   {GROUP, Mandatory, 0, Range{1, -1}},
 
+		".CODE": simseg, "CODESEG": simseg,
+		".DATA": simseg, "DATASEG": simseg,
+		".CONST": simseg, "CONST": simseg,
+		".DATA?": simseg, "UDATASEG": simseg,
+		".FARDATA": simseg, "FARDATA": simseg,
+		".FARDATA?": simseg, "UFARDATA": simseg,
 		// TODO: Add the Ideal mode version, which leaves the segment open.
 		".STACK": {STACK, NotAllowed, NoStruct, Range{0, 1}},
 		// Data allocations

@@ -30,6 +30,7 @@ func (v asmStruc) Thing() string {
 
 func (v asmStruc) OpenThing() string  { return "open structure" }
 func (v asmStruc) OpenThings() string { return "open structures" }
+func (v asmStruc) Unclosed() bool     { return false }
 
 func (v asmStruc) Name() string {
 	if v.name == "" {
